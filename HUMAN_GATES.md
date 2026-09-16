@@ -1,12 +1,15 @@
 # Human Gates
 
-No human gate is required for the bootstrap milestone.
+## Current gates (not executed)
 
-Future work must stop and request owner action only for a genuine external gate, such as:
+- Meta/WhatsApp business account and phone-number eligibility for Calling API.
+- Any required business verification, App Review, permissions, or account approval.
+- Acceptance of Meta/third-party terms or privacy obligations.
+- Any paid provider, paid quota, billing activation, or financial commitment.
+- Production credentials, secrets, or owner consent for an external side effect.
 
-- GitHub login, OTP, account approval, or consent;
-- approval of a destructive or irreversible change;
-- approval to connect an external service;
-- a required action that cannot be performed through the available automation.
+These are recorded only; Milestone 1 does not initiate them.
 
-Never request or record passwords, tokens, cookies, API keys, payment details, or other credentials in this repository or in GitHub.
+## Gate handling
+
+A future implementation must stop at the gate, state the exact action required, and never request or store the secret in GitHub. Local/free research and tests continue without the gate.
