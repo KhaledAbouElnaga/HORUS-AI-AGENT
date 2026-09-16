@@ -34,19 +34,26 @@ The low voice executed successfully but did not outperform medium. The upstream 
 
 Both use llama-cpp-python 0.3.35 on CPU. Qwen2.5 models are Apache-2.0 per the upstream repository. The 1.5B model is the selected experimental local path, not a production default.
 
-## 30-turn real pipeline with selected experimental agent
+## Corrected 30-turn real pipeline with selected experimental agent
 
-Pipeline: WebRTC VAD to faster-whisper base/int8 forced-Arabic beam5 to Qwen2.5-1.5B Q4_K_M to Piper kareem-medium.
+Pipeline: WebRTC VAD to category-aware faster-whisper base/int8 beam5 to Qwen2.5-1.5B Q4_K_M to category-aware Piper. English STT uses auto-detection; Egyptian Arabic, MSA, and the Arabic-led synthetic mixed fixture use forced Arabic. English replies use `en_US-lessac-medium`; Arabic replies use `ar_JO-kareem-medium`. Mixed replies use the voice matching their dominant output script, with Arabic as the tie-break. The system instruction is retained separately from the rolling eight-message conversational window.
 
 | Metric | p50 | p95 |
 |---|---:|---:|
-| VAD | 10.76 ms | 19.93 ms |
-| STT | 1,962.96 ms | 2,368.69 ms |
-| Agent first token | 1,410.31 ms | 1,648.32 ms |
-| TTS first audio | 588.07 ms | 960.37 ms |
-| End-to-end | 4,856.86 ms | 5,290.60 ms |
+| VAD | 10.76 ms | 20.55 ms |
+| STT | 2,201.63 ms | 2,663.54 ms |
+| Agent first token | 800.31 ms | 1,015.62 ms |
+| TTS first audio | 176.87 ms | 345.92 ms |
+| End-to-end | 3,249.78 ms | 4,146.59 ms |
 
-Process loads: STT 743.50 ms, agent 714.16 ms, TTS 1,687.50 ms. Final RSS 2,324.6 MB. RTX 3050 was detected but not used because the installed CTranslate2 and llama.cpp paths were CPU builds.
+| Category | Turns | Mean WER | STT p50 / p95 | E2E p50 / p95 | STT route | TTS voice observed |
+|---|---:|---:|---:|---:|---|---|
+| Egyptian Arabic | 12 | 0.3972 | 2,327.90 / 2,397.54 ms | 3,549.79 / 3,714.52 ms | forced Arabic | kareem-medium 12/12 |
+| MSA Arabic | 8 | 0.1667 | 2,082.92 / 2,227.49 ms | 3,120.51 / 3,266.52 ms | forced Arabic | kareem-medium 8/8 |
+| English | 7 | 0.0726 | 2,626.71 / 2,666.66 ms | 4,114.13 / 4,193.80 ms | auto-detect | lessac-medium 7/7 |
+| Mixed synthetic | 3 | 0.8125 | 1,511.46 / 1,519.30 ms | 2,562.50 / 2,614.30 ms | forced Arabic | kareem-medium 3/3 |
+
+Overall E2E mean WER was 0.3015. Process cold loads were STT 745.34 ms, agent 739.66 ms, Arabic TTS 1,850.64 ms, and English TTS 3,206.57 ms; final RSS was 2,267.9 MB. The English route no longer forces Arabic or synthesizes English through an Arabic voice. The natural code-switch limitation remains: the mixed sample is concatenated, Arabic-led, and has high WER, so it cannot support a production code-switch claim.
 
 ## VAD, barge-in, and hardware
 
@@ -60,7 +67,7 @@ Process loads: STT 743.50 ms, agent 714.16 ms, TTS 1,687.50 ms. Final RSS 2,324.
 |---|---:|---:|
 | Real turns | 20 | 30 |
 | Mean WER | 0.5411 | 0.3109 in repeated STT comparison |
-| End-to-end p95 | 2,599.71 ms deterministic agent | 5,290.60 ms Qwen 1.5B agent |
+| End-to-end p95 | 2,599.71 ms deterministic agent | 4,146.59 ms corrected policy-routed Qwen 1.5B agent |
 | Barge-in runs | 10 | 20 |
 | Agent | deterministic | real local 1.5B, memory PASS, tools 16/20 |
 | VAD | energy threshold | frame-based WebRTC VAD |

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from horus_local_voice.real_audio import execute_bounded_adapter, inspect_pcm_wav, nearest_rank, stream_until_cancelled, webrtc_vad_wav, word_error_rate
+from horus_local_voice.m3_policy import ARABIC_VOICE, ENGLISH_VOICE, inference_context, stt_language_for, tts_voice_for
 
 
 def make_wav(path: Path, samples: bytes = b"\x00\x10" * 1600) -> None:
@@ -78,3 +79,26 @@ def test_real_adapter_boundary_times_out_stt():
 def test_real_adapter_boundary_fails_closed_on_tts_error():
     result = execute_bounded_adapter(lambda: (_ for _ in ()).throw(OSError("tts failed")), 0.2)
     assert not result.ok and "tts failed" in result.error
+
+
+def test_system_instruction_survives_beyond_ten_turns():
+    system = {"role": "system", "content": "non-negotiable instruction"}
+    history = []
+    for turn in range(12):
+        history.extend((
+            {"role": "user", "content": f"user-{turn}"},
+            {"role": "assistant", "content": f"assistant-{turn}"},
+        ))
+    context = inference_context(system, history)
+    assert context[0] == system
+    assert len(context) == 9
+    assert context[-1]["content"] == "assistant-11"
+
+
+def test_m3_language_routes_are_explicit_and_fail_safe():
+    assert stt_language_for("english") is None
+    assert stt_language_for("egyptian_arabic") == "ar"
+    assert stt_language_for("mixed") == "ar"
+    assert tts_voice_for("english", "Hello") == ENGLISH_VOICE
+    assert tts_voice_for("mixed", "ملخص سريع quick") == ARABIC_VOICE
+    assert tts_voice_for("mixed", "Quick summary ملخص") == ENGLISH_VOICE
