@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass, field
 from threading import Event, Lock
 from typing import Callable
-from collections import deque
 
 
 @dataclass(frozen=True)
@@ -276,9 +275,12 @@ class StreamSession:
     def start(self):
         if self.state not in {"created", "stopped"}:
             raise RuntimeError("invalid session transition")
+        self.queue.start()
         self.state = "listening"
 
     def recover(self, component: str):
+        if self.state == "stopped":
+            self.queue.start()
         self.restarts += 1
         self.state = "listening"
         self.metrics.append({"event": "recovery", "component": component, "at_ns": time.perf_counter_ns()})

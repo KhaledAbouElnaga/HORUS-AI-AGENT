@@ -73,3 +73,30 @@ def test_pipelined_responder_drops_audio_after_cancel():
     pipeline = PipelinedResponder(lambda text: (pipeline.cancel(), text.encode())[1], emitted.append)
     result = pipeline.run(iter(["Cancel now."]))
     assert result.cancelled and emitted == []
+
+
+def test_stream_session_starts_and_stops_bounded_queue():
+    from horus_local_voice.streaming import AudioChunk, StreamSession
+    session = StreamSession("test", queue_size=1)
+    session.start()
+    assert session.state == "listening"
+    assert session.queue.push(AudioChunk(1, 1, b"frame"))
+    assert not session.queue.push(AudioChunk(2, 2, b"overflow"))
+    assert session.queue.high_water == 1 and session.queue.dropped == 1
+    session.stop()
+    assert session.state == "stopped" and session.queue.depth == 0
+
+
+def test_stream_session_recovery_records_component():
+    from horus_local_voice.streaming import StreamSession
+    session = StreamSession("recover")
+    session.start()
+    session.recover("stt")
+    assert session.restarts == 1
+    assert session.metrics[-1]["component"] == "stt"
+
+
+def test_audio_chunk_compatibility_timestamp_property():
+    from horus_local_voice.streaming import AudioChunk
+    chunk = AudioChunk(sequence=3, captured_ns=99, pcm=b"x", sample_rate=8000)
+    assert chunk.captured_at_ns == 99 and chunk.sample_rate == 8000
