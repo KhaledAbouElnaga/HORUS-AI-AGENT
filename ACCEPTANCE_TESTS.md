@@ -64,3 +64,21 @@
 | L12 | Existing-system isolation | No files/configs/processes outside this repository are changed |
 
 Evidence for implementation tests must be attached to the milestone PR; this milestone stops at specification.
+
+
+## Milestone 4 evidence
+
+| ID | Result | Evidence |
+|---|---|---|
+| M4-01 | PASS | 32 utterances and 64 real incremental faster-whisper prefix inferences; final WER 0.3109 |
+| M4-02 | PARTIAL | Two endpoint policies, 40 trials each; patient policy selected but false-cut 11/40 stress trials |
+| M4-03 | PASS | 20 streamed Qwen prompts plus 12-turn continuity; system retained and pinned memory recalled |
+| M4-04 | PASS | Sentence and phrase Piper strategies, 8 runs each; explicit per-chunk Arabic/English routing |
+| M4-05 | PASS/PARTIAL | 40 pipelined turns completed; first-playable p95 4,404.22 ms, slower than M3 p95 4,146.59 ms |
+| M4-06 | PASS | Three measured experiments: STT beam, LLM threads, and TTS chunk strategy |
+| M4-07 | PARTIAL | 10 Egyptian-style and 10 mixed controlled synthetic fixtures; natural corpus still blocked; selected mixed WER 0.7724 |
+| M4-08 | PASS | 30/30 interruptions across generation/TTS/sink; zero stale output; cancel p95 0.02 ms |
+| M4-09 | PASS | 11 streaming failure/recovery paths actively injected and failed closed |
+| M4-10 | PASS | Streaming state/stale-event regression tests added; 28-test suite passes |
+| M4-11 | PASS | 10 microphone captures completed and immediately discarded; no ambient audio retained |
+| M4-12 | PASS | Required M4 docs and exact raw artifact paths recorded; no provider/billing/credential changes |

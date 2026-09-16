@@ -10,3 +10,10 @@
 - Compare model configurations on identical fixtures and repeated warm runs; a lower-latency forced-language path can have a severe p95 outlier.
 - Treat model quality and runtime as separate gates: TinyLlama executed locally but produced unusable Arabic/instruction outputs, so it is not the selected agent path.
 - Keep physical device tests separate from unattended file tests; enumerating a microphone is not evidence that recording/playback quality passed.
+
+- A partial result is not automatically low latency: recomputing at a 50% prefix made first partial p95 9.04 s including audio accumulation. A persistent decoder/window is needed for a production latency win.
+- Streaming overlap alone did not beat the M3 aggregate p95; rolling context and repeated prefix decode can erase the first-audio gain.
+- On controlled Arabic-led mixed audio, forced Arabic improved WER and latency, but 0.7724 WER is still poor and synthetic evidence must not be presented as natural code-switch quality.
+- Endpoint silence thresholds need stress fixtures with internal pauses. The more patient policy reduced false cuts but did not eliminate them.
+- Cancellation must be checked at generation, post-synthesis queue, and immediately before sink emission; one monotonic epoch makes stale output rejection testable.
+- Preserve durable facts outside the rolling chat window while always rebuilding context with the system instruction first.
