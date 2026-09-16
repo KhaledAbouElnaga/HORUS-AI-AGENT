@@ -57,7 +57,7 @@ Use bounded queues, cancellation propagation, idempotent event handling, reconne
 
 ## Milestone 3 selection
 
-The comparison selects faster-whisper `base/int8/auto` when accuracy is prioritized (mean WER 0.3675, p95 STT 1435.77 ms), with `tiny/int8/auto` as the lower-resource fallback. WebRTC VAD is preferred over the earlier energy gate. TinyLlama/llama.cpp was executed but rejected for poor Arabic/instruction output quality; the agent boundary remains replaceable.
+The measured policy selects faster-whisper `base/int8/forced-Arabic/beam5` for Egyptian, MSA, and the Arabic-led synthetic mixed fixture, while English uses auto-detection. WebRTC VAD replaces the earlier energy gate. Qwen2.5-1.5B Q4_K_M through llama.cpp is the selected experimental agent after passing turn-10 context and 16/20 schema actions; the boundary remains replaceable. Piper routes English replies to `en_US-lessac-medium`, Arabic replies to `ar_JO-kareem-medium`, and mixed replies by dominant output script with an Arabic tie-break. The system instruction is prepended outside the bounded rolling conversation window.
 
 ## Sources
 

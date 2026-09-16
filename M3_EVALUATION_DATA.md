@@ -11,29 +11,15 @@ Downloader: `python scripts/download_fixtures.py`. Audio is normalized to mono, 
 
 ## Egyptian conversational search boundary
 
-The searched `NightPrince/MasriSpeech` route was not consumable through the public datasets-server in this environment (HTTP 404/401). No credentials were supplied and no gated access was bypassed. Therefore Egyptian conversational quality is not claimed; the current set is reproducible but read-speech biased.
+The searched `NightPrince/MasriSpeech` route was not consumable through the public datasets-server in this environment (HTTP 404/401). No credentials were supplied and no gated access was bypassed. `Yahya-Mohamed/egyptian-arabic-speech-dataset` exposes precomputed input features and token labels rather than reusable raw speech/transcripts and states no license. `xtz999/egyptian_arabic_speech_zaid` also states no license. Neither was imported. Egyptian conversational or natural code-switch quality is therefore not claimed.
 
 ## Sources and licenses
 
 - FLEURS-derived dataset: https://huggingface.co/datasets/MohamedRashad/fleurs-ar-eg
 - LibriSpeech dummy fixture: https://huggingface.co/datasets/hf-internal-testing/librispeech_asr_dummy
 - faster-whisper: https://github.com/SYSTRAN/faster-whisper (MIT implementation; model terms remain applicable)
-- Piper voices/engine: https://github.com/OHF-Voice/piper1-gpl (engine/voice licenses must be reviewed per redistribution)
-- TinyLlama model: https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0 (Apache-2.0 model card)
+- Piper voices/engine: https://github.com/OHF-Voice/piper1-gpl (engine and voice licenses require review before redistribution)
+- Qwen 0.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+- Qwen 1.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+- Qwen repositories state Apache-2.0.
 - llama.cpp: https://github.com/ggml-org/llama.cpp (MIT)
-
-## Additional public-data attempts
-
-Yahya-Mohamed/egyptian-arabic-speech-dataset was inspected: it exposes precomputed input_features and token labels, not reusable raw speech/transcripts, and its card states no license. xtz999/egyptian_arabic_speech_zaid was inspected but its card also states no license. Neither was imported. The concatenated mixed fixture remains explicitly synthetic rather than natural code-switch speech.
-
-- Qwen 0.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-- Qwen 1.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
-- Both repositories state Apache-2.0.
-
-## Additional public-data attempts
-
-Yahya-Mohamed/egyptian-arabic-speech-dataset was inspected: it exposes precomputed input features and token labels, not reusable raw speech and transcripts, and its card states no license. xtz999/egyptian_arabic_speech_zaid was inspected but its card also states no license. Neither was imported. The concatenated mixed fixture remains explicitly synthetic rather than natural code-switch speech.
-
-- Qwen 0.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-- Qwen 1.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
-- Both repositories state Apache-2.0.
