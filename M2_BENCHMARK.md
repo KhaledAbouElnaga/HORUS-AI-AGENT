@@ -1,28 +1,21 @@
-## Real local benchmark
+# Milestone 2 Benchmark
 
-| Path | Result |
-|---|---:|
-| STT | 20 turns; p50 959.62 ms, p95 1075.13 ms, max 1089.04 ms |
-| Agent first output | p50/p95 0.001 ms (deterministic in-process adapter) |
-| TTS first-audio | p50 233.20 ms, p95 368.06 ms, max 420.06 ms |
-| End-to-end | p50 1199.54 ms, p95 1428.56 ms, max 1469.53 ms |
-| Model load | 965.50 ms warm-cache load in latest run; first cold run 25,406.15 ms |
-| Voice load | 3519.07 ms for two Piper voices |
-| Process RSS | 481.3 MB at completion; CPU path, no GPU |
-| WER proxy | mean 0.5411 over 20 turns (8 fixture types) |
-| Barge-in | 10/10 active-chunk cancellations; min/median/p95 0.0 ms at sink boundary; speaker hardware latency not measured |
-| Session | 20 real audio turns retained; 10-turn continuity assertion PASS |
+Latest isolated local CPU run: 20 turns over all 8 fixture types.
 
-These measurements are local CPU/harness measurements, not production or microphone latency. The Arabic clips are labeled Egyptian-Arabic dataset samples but are read benchmark sentences; Egyptian conversational quality remains unproven.
+| Measurement | min | median | p95 | max |
+|---|---:|---:|---:|---:|
+| PCM validation/energy VAD ms | 13.32 | 49.38 | 91.6 | 91.64 |
+| STT final ms | 841.54 | 1708.03 | 1787.07 | 1833.73 |
+| Agent first output ms | 0.0 | 0.001 | 0.001 | 0.001 |
+| TTS first-audio ms | 287.64 | 703.69 | 826.9 | 1163.19 |
+| TTS synthesis ms | 287.65 | 703.7 | 826.91 | 1163.2 |
+| End-to-end ms | 1603.46 | 2475.41 | 2599.71 | 2746.58 |
 
+- STT model load (cached files, fresh process): 706.42 ms; first download/load observed earlier: 25,406.15 ms.
+- Two Piper voices load: 3820.69 ms.
+- Mean WER: 0.5311 across 20 turns / 8 fixture types.
+- Session continuity: 20 retained turns; 10-turn assertion PASS.
+- Process RSS: 473.7 MB; CPU sample: 792.8 percent across logical cores; GPU not used.
+- Barge-in software sink: 10/10 cancelled, min 0.04 ms, median 0.064 ms, p95 0.107 ms. Hardware latency NOT MEASURED.
 
-| Measurement | Observed value | Scope/limitation |
-|---|---:|---|
-| Harness startup + fixture load | 51.09 ms | One local run; includes Python startup and `runpy` overhead |
-| Python peak traced allocations | 1,884.8 KiB | `tracemalloc` Python allocations, not total process RSS |
-| Seven fixture turns end-to-end | 0.04 ms | Mock/deterministic path, not real audio or model latency |
-| Model download/storage | faster-whisper tiny + 2 Piper voices | Cached local models; exact file sizes in local voice/model directories, not committed |
-| CPU/GPU | CPU-only; process RSS 428.7 MB; sample CPU 1362.4% across logical cores | No GPU used |
-| Largest bottleneck | STT p95 818.60 ms; cold model load 25.41 s | CPU tiny model, 20-turn run |
-
-The first table is the real local pipeline; the second retains deterministic harness baselines. These are not production or microphone latency claims.
+These are local prototype measurements, not production/WhatsApp or conversational-dialect quality claims. TTS first-audio is time until Piper yields its first sentence chunk.

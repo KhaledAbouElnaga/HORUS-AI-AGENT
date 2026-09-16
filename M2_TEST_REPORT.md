@@ -5,7 +5,7 @@
 
 ## Result
 
-`13 passed in 0.08s`
+`13 passed in 0.09s`
 
 | Area | Result | Evidence |
 |---|---|---|
@@ -21,7 +21,7 @@
 | Real Arabic fixture recognition | PASS | 5 Arabic WAV clips transcribed; mean WER proxy recorded in `M2_BENCHMARK.md` |
 | Real English recognition | PASS | 2 English WAV clips transcribed |
 | Real WAV ingestion/validation | PASS | `tests/test_real_audio.py`: PCM contract and energy VAD |
-| Negative audio/failure paths | PASS | corrupt/missing WAV fail closed; normalization and bounded TTS failure documented |
+| Negative audio/failure paths | PARTIAL | corrupt/missing WAV fail closed; prior TTS allocation failure recovered; isolated STT/TTS timeout and corrupt-model tests remain NOT MEASURED |
 | Cancellation stream semantics | PASS | `test_active_stream_cancels_and_never_resumes`; 10-run sink benchmark |
 | Real microphone/audio device | NOT YET MEASURED | Device exists, but no recording was performed in this unattended run |
 | Meta/WhatsApp realtime path | BLOCKED | Deliberately outside this milestone |
@@ -31,4 +31,4 @@ Real component execution is PASS; Egyptian conversational dialect quality remain
 
 ## Real local evidence
 
-`python scripts/run_real_pipeline.py` executed 20 turns over 7 downloaded PCM WAV clips. faster-whisper `tiny`/CPU/int8 transcribed all source clips; Piper generated playable Arabic and English WAV output. Exact per-clip transcripts, references, WER, and STT latency are in `M2_REAL_RESULTS.md`. An initial long transcript-to-TTS attempt failed with ONNX Runtime `bad allocation`; bounded deterministic response text is the recorded recovery boundary.
+`python scripts/run_real_pipeline.py` executed 20 turns over all 8 PCM WAV fixture types. faster-whisper `tiny`/CPU/int8 transcribed all source clips; Piper generated playable Arabic and English WAV output. Exact per-clip transcripts, references, WER, and STT latency are in `M2_REAL_RESULTS.md`. An initial long transcript-to-TTS attempt failed with ONNX Runtime `bad allocation`; bounded deterministic response text is the recorded recovery boundary.

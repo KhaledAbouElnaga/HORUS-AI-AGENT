@@ -15,12 +15,12 @@ OUT.mkdir(parents=True, exist_ok=True)
 def rows(dataset, split, count, config='default'):
     q = urllib.parse.urlencode({'dataset': dataset, 'config': config, 'split': split})
     with urllib.request.urlopen('https://datasets-server.huggingface.co/first-rows?' + q, timeout=120) as r:
-        return json.load(r)['rows'][:count]
+        return json.load(r)['rows']
 
 
-def download(label, dataset, split, count, config='default'):
+def download(label, dataset, split, count, config='default', offset=0):
     manifest = []
-    for i, item in enumerate(rows(dataset, split, count, config)):
+    for i, item in enumerate(rows(dataset, split, count, config)[offset:offset + count]):
         row = item['row']
         url = row['audio'][0]['src']
         target = OUT / f'{label}_{i+1:02d}.wav'
@@ -34,7 +34,7 @@ def download(label, dataset, split, count, config='default'):
     return manifest
 
 manifest = download('egyptian_arabic', 'MohamedRashad/fleurs-ar-eg', 'test', 3)
-manifest += download('arabic_msa', 'MohamedRashad/fleurs-ar-eg', 'test', 2)
+manifest += download('arabic_msa', 'MohamedRashad/fleurs-ar-eg', 'test', 2, offset=3)
 manifest += download('english', 'hf-internal-testing/librispeech_asr_dummy', 'validation', 2, 'clean')
 # A reproducible mixed-language fixture is a real Arabic clip followed by a real English clip.
 from wave import open as wave_open

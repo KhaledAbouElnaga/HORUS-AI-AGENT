@@ -53,7 +53,7 @@ Use bounded queues, cancellation propagation, idempotent event handling, reconne
 
 `src/horus_local_voice` implements the event contract with replaceable `VAD`, `STT`, `AgentRuntime`, `TTS`, and `AudioIO` protocols. `VoiceHarness` is the deterministic vertical slice: it exercises final turns, cancellation, stale-event rejection, context, fail-closed tool decisions, fallback, and redacted metrics. It intentionally has no microphone, model, provider, or channel dependency.
 
-`scripts/run_real_pipeline.py` adds the executed local path: WAV fixture -> faster-whisper tiny/int8 CPU -> deterministic agent -> Piper Arabic/English WAV. It keeps model/provider loading outside the existing HORUS runtime.
+`scripts/run_real_pipeline.py` adds the executed local path: validated PCM WAV -> energy VAD -> faster-whisper tiny/int8 CPU -> deterministic agent -> Piper Arabic/English audio chunks. It keeps model/provider loading outside the existing HORUS runtime.
 
 ## Sources
 
