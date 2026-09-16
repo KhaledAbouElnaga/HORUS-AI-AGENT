@@ -1,6 +1,8 @@
 # Lessons
 
-- Keep the first vertical slice event-driven and deterministic; it makes cancellation, ordering, fallback, and metrics testable without a microphone or account.
+- Downloading public FLEURS fixtures can fail when a dataset config is wrong; query the dataset-server config and preserve the exact manifest.
+- Normalize downloaded audio to mono 16 kHz PCM before using Python's `wave` module; FLEURS returned float WAV that the stdlib reader rejected.
+- Bound text sent to local TTS; an unbounded Arabic transcript caused ONNX Runtime `bad allocation`, so the prototype records the failure and keeps the deterministic path alive.
 - Treat out-of-order events as stale and ignore them after recording the metric; replaying them can duplicate agent turns or tool effects.
 - Keep tool authorization deterministic and fail closed before adding a real model.
 - Record resource numbers with scope and limitations; harness timings are not speech-model latency.

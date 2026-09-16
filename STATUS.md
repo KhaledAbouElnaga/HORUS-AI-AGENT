@@ -1,9 +1,9 @@
 # Status
 
 - **Current milestone:** Milestone 2 — local realtime voice prototype slice
-- **Last completed test:** `7 passed in 0.02s`; compileall PASS; deterministic harness benchmark recorded; no model or external account used.
-- **Blockers:** Real local STT/TTS quality and audio-device measurements remain NOT YET MEASURED; Meta/WhatsApp integration remains intentionally deferred.
-- **Next action:** Open the Milestone 2 PR for review; after acceptance, time-box a real local speech dependency spike without changing existing HORUS runtime systems.
+- **Last completed test:** 20 real WAV end-to-end turns completed; 7 automated tests pass; compileall, secret scan, and diff checks pass.
+- **Blockers:** Hardware microphone/speaker smoke test was not run; real dialect quality is measured only on downloaded public fixtures; Meta/WhatsApp integration remains intentionally deferred.
+- **Next action:** Update PR #6 with real STT/TTS evidence and wait for ChatGPT review; do not merge.
 - **Human input actually required:** No action required now. Future Meta account approval, legal/terms acceptance, paid/billing activation, or production credentials are explicit human gates.
 
 No existing HORUS runtime system, provider, credential, routing, unrelated repository, or billing configuration was changed.

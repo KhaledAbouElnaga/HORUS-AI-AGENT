@@ -23,8 +23,13 @@
 | M2-05 | PASS | `test_channel_failure_enters_fallback` |
 | M2-06 | PASS | `test_tool_calls_fail_closed_and_are_audited` |
 | M2-07 | PASS | `python -m compileall -q src tests` and secret scan |
-| M2-08 | NOT YET MEASURED | Real STT/TTS, microphone, and dialect quality; no model installed |
+| M2-08 | PASS | `scripts/run_real_pipeline.py` executed 20 real WAV -> faster-whisper -> deterministic agent -> Piper turns; 20/20 completed |
 | M2-09 | BLOCKED | Meta/WhatsApp integration intentionally deferred |
+| M2-10 | PASS | `scripts/benchmark_barge_in.py`: 10 active-chunk cancellation runs; stale audio sink stopped |
+| M2-11 | PASS | `scripts/download_fixtures.py` creates 3 Egyptian-Arabic, 2 formal-Arabic-text, 2 English, and 1 composed mixed WAV fixture |
+| M2-12 | NOT YET MEASURED | Physical microphone/speaker path and hardware interruption latency |
+| M2-13 | NOT YET MEASURED | Real local agent model; deterministic agent used because no suitable pre-existing local runtime was found |
+| M2-14 | PASS | Recovery recorded for wrong dataset config, float WAV, and TTS ONNX allocation failure |
 
 ## Local prototype test matrix (implementation follows review)
 
