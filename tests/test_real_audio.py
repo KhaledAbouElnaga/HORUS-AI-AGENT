@@ -1,11 +1,13 @@
 import threading
 import time
 import wave
+import random
+import struct
 from pathlib import Path
 
 import pytest
 
-from horus_local_voice.real_audio import inspect_pcm_wav, nearest_rank, stream_until_cancelled, word_error_rate
+from horus_local_voice.real_audio import execute_bounded_adapter, inspect_pcm_wav, nearest_rank, stream_until_cancelled, webrtc_vad_wav, word_error_rate
 
 
 def make_wav(path: Path, samples: bytes = b"\x00\x10" * 1600) -> None:
@@ -47,3 +49,32 @@ def test_active_stream_cancels_and_never_resumes(tmp_path):
     assert result["cancelled"] is True
     assert result["chunks"] < 200
     assert (result["detected_at_ns"] - started) / 1e6 < 100
+
+
+def test_webrtc_vad_speech_silence_and_low_noise(tmp_path):
+    speech = webrtc_vad_wav(Path("artifacts/audio/english_01.wav"))
+    silence = tmp_path / "silence.wav"
+    low_noise = tmp_path / "low_noise.wav"
+    make_wav(silence, b"\x00\x00" * 16000)
+    random.seed(7)
+    samples = [random.randint(-8, 8) for _ in range(16000)]
+    make_wav(low_noise, struct.pack("<" + "h" * len(samples), *samples))
+    assert speech.speech_detected
+    assert not webrtc_vad_wav(silence).speech_detected
+    assert not webrtc_vad_wav(low_noise).speech_detected
+
+
+def test_real_adapter_boundary_fails_closed_on_stt_error():
+    result = execute_bounded_adapter(lambda: (_ for _ in ()).throw(RuntimeError("stt failed")), 0.2)
+    assert not result.ok and "stt failed" in result.error
+    assert result.fallback == "text_or_voice_note"
+
+
+def test_real_adapter_boundary_times_out_stt():
+    result = execute_bounded_adapter(lambda: time.sleep(0.1), 0.01)
+    assert not result.ok and result.timed_out
+
+
+def test_real_adapter_boundary_fails_closed_on_tts_error():
+    result = execute_bounded_adapter(lambda: (_ for _ in ()).throw(OSError("tts failed")), 0.2)
+    assert not result.ok and "tts failed" in result.error
