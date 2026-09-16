@@ -24,7 +24,7 @@ Two `base/int8` candidates each processed the same 20-turn set as fixed 30 ms ch
 
 ## Endpointing
 
-Selected robust 1200 ms policy: 40 trials, 0 false cuts, decision p95 0.0418 ms. Applied on every fresh 50-turn sustained stream.
+Selected patient 600 ms policy: 40 trials, 11 false cuts, decision p95 0.02 ms. Applied on every fresh 50-turn sustained stream.
 
 ## Agent/TTS duplex behavior
 

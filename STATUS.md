@@ -7,6 +7,6 @@
 - **Live duplex evidence:** 10/10 overlapping Windows input/output trials with active non-zero Piper speech. Injected speech-start while microphone callback was active produced callback-silence p95 0.0234 ms and physical stream-stop p95 230.4233 ms; 0 stale output samples; no raw microphone audio retained.
 - **Failure evidence:** focused 9/9 failure/recovery runner plus earlier 11-case suite fail closed.
 - **Regression:** 31 tests pass; compileall, artifact acceptance assertions, secret scan, and `git diff --check` pass.
-- **Measured limitations:** M4 still does not beat M3 aggregate latency; RSS grew 451.69 MB across the full-pipeline run; full-pipeline tiny STT mean WER was 0.6321; robust endpointing adds 1.2 s tail; natural Egyptian/code-switch and acoustic echo/human interruption quality remain NOT MEASURED.
+- **Measured limitations:** M4 still does not beat M3 aggregate latency; RSS grew 451.69 MB across the full-pipeline run; full-pipeline tiny STT mean WER was 0.6321; patient-600ms endpointing (11/40 false cuts) uses a 600 ms end-silence window; natural Egyptian/code-switch and acoustic echo/human interruption quality remain NOT MEASURED.
 - **Next action:** update PR #11 on the same branch, post exact review-ready results, and await ChatGPT review. Do not merge.
 - **Human input required:** None. Meta/WhatsApp, paid/billing, credentials, existing HORUS providers/routing, and unrelated systems remain untouched.

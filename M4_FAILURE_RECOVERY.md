@@ -32,6 +32,6 @@ The primary streaming benchmark separately injected 11 fail-closed cases: STT ex
 ## Remaining limits
 
 - Natural licensed Egyptian/code-switch conversational data remains BLOCKED; controlled substitutes are labelled.
-- The selected endpoint policy needs a 1,200 ms tail, above the 900 ms target.
+- The selected endpoint policy (patient-600ms, 11/40 false cuts) uses a 600 ms end-silence window.
 - Sustained RSS grew 62.07 MB; first-token p95 changed from 4,428.85 ms in turns 1-10 to 2,078.88 ms in turns 41-50, with no queue growth, dropped events, or duplicates.
 - Acoustic loudspeaker stop timing and subjective quality are NOT MEASURED.

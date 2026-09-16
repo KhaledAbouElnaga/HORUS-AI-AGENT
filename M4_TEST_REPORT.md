@@ -5,7 +5,7 @@
 | Area | Result |
 |---|---|
 | Incremental STT | PASS — two genuine 30 ms chunk-fed candidates, 20 turns each, 60 partials each, all turns with multiple deduplicated hypotheses |
-| Endpointing | PASS — robust 1200 ms policy, 40 trials, 0 false cuts; applied on all 50 fresh sustained streams |
+| Endpointing | PASS — patient 600 ms policy, 40 trials, 11 false cuts; applied on all 50 fresh sustained streams |
 | Agent streaming | PASS — Qwen2.5-1.5B streamed on 50 turns; system retained; pinned `7319` recalled at turn 50 |
 | TTS streaming | PASS — Piper synthesis began from streamed phrase chunks on every turn; Arabic/English routing explicit |
 | Sustained E2E | PASS — 50 fresh full-pipeline turns, 150 partials, 5 interruptions, 3 recoveries, 0 drops/duplicates/stale events/cancel failures |
