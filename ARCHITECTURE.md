@@ -55,6 +55,10 @@ Use bounded queues, cancellation propagation, idempotent event handling, reconne
 
 `scripts/run_real_pipeline.py` adds the executed local path: WAV fixture -> faster-whisper tiny/int8 CPU -> deterministic agent -> Piper Arabic/English WAV. It keeps model/provider loading outside the existing HORUS runtime.
 
+## Milestone 3 selection
+
+The comparison selects faster-whisper `base/int8/auto` when accuracy is prioritized (mean WER 0.3675, p95 STT 1435.77 ms), with `tiny/int8/auto` as the lower-resource fallback. WebRTC VAD is preferred over the earlier energy gate. TinyLlama/llama.cpp was executed but rejected for poor Arabic/instruction output quality; the agent boundary remains replaceable.
+
 ## Sources
 
 [1] https://developers.facebook.com/docs/whatsapp/cloud-api/calling

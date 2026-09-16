@@ -29,7 +29,7 @@ voices = {
 voice_load_ms = (time.perf_counter() - voice_load_started) * 1000
 rows, context = [], []
 started_all = time.perf_counter()
-for index in range(20):
+for index in range(30):
     item = manifest[index % len(manifest)]
     path = ROOT / item["file"]
     turn_started = time.perf_counter()

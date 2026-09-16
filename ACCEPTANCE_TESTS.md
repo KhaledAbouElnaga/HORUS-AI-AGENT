@@ -31,6 +31,21 @@
 | M2-13 | NOT YET MEASURED | Real local agent model; deterministic agent used because no suitable pre-existing local runtime was found |
 | M2-14 | PASS | Recovery recorded for wrong dataset config, float WAV, and TTS ONNX allocation failure |
 
+## Milestone 3 evidence
+
+| ID | Result | Evidence |
+|---|---|---|
+| M3-01 | PASS | `M3_BENCHMARK.md`: tiny auto, tiny forced-language, and base auto; 3 repeats over the same 8 fixtures |
+| M3-02 | PASS | Piper `en_US-amy-low` generated a playable WAV; SAPI alternative was attempted and timed out after 300 s |
+| M3-03 | PASS/BLOCKED SELECTION | TinyLlama GGUF via llama.cpp generated 3 outputs; executed but rejected for poor Arabic/instruction quality |
+| M3-04 | PASS | 30 real audio end-to-end turns with WebRTC VAD, STT, deterministic agent, and Piper |
+| M3-05 | PASS | 20/20 barge-in cancellation runs; p95 0.143 ms at software sink boundary |
+| M3-06 | BLOCKED/PARTIAL | Public Egyptian-labelled read speech available; conversational MasriSpeech route returned 404/401 without bypassing access controls |
+| M3-07 | INSPECTED/NOT MEASURED | Microphone and speakers enumerated with `sounddevice.query_devices()`; no unattended recording/playback |
+| M3-08 | PASS | Missing model, malformed audio, adapter timeout/error, float WAV, dataset config, and TTS allocation failures actively exercised |
+| M3-09 | PASS | Before/after numbers in `M3_BENCHMARK.md` |
+| M3-10 | PASS | Final regression, compile, secret, diff, isolation, and delivery checks completed before PR |
+
 ## Local prototype test matrix (implementation follows review)
 
 | ID | Test | Pass condition |

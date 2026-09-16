@@ -7,3 +7,6 @@
 - Keep tool authorization deterministic and fail closed before adding a real model.
 - Record resource numbers with scope and limitations; harness timings are not speech-model latency.
 - Time-box local model setup. If a model is unavailable, preserve the adapter contract and continue with the harness.
+- Compare model configurations on identical fixtures and repeated warm runs; a lower-latency forced-language path can have a severe p95 outlier.
+- Treat model quality and runtime as separate gates: TinyLlama executed locally but produced unusable Arabic/instruction outputs, so it is not the selected agent path.
+- Keep physical device tests separate from unattended file tests; enumerating a microphone is not evidence that recording/playback quality passed.
