@@ -9,7 +9,7 @@ from horus_local_voice.real_audio import nearest_rank, stream_until_cancelled
 ROOT = Path(__file__).parents[1]
 audio = ROOT / "artifacts/tts/english.wav"
 rows = []
-for _ in range(10):
+for _ in range(20):
     cancel = threading.Event()
     signal_ns = []
     def signal():
@@ -23,7 +23,7 @@ for _ in range(10):
 result = {
     "runs": len(rows), "latencies_ms": rows, "min_ms": min(rows),
     "median_ms": nearest_rank(rows, 0.5), "p95_ms": nearest_rank(rows, 0.95),
-    "all_cancelled": len(rows) == 10, "audio_file": "artifacts/tts/english.wav",
+    "all_cancelled": len(rows) == 20, "audio_file": "artifacts/tts/english.wav",
     "note": "realtime software sink over real Piper WAV; no user hardware output",
 }
 (ROOT / "artifacts/barge_in_results.json").write_text(json.dumps(result, indent=2), encoding="utf-8")

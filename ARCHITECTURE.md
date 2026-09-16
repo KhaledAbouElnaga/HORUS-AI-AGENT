@@ -55,6 +55,10 @@ Use bounded queues, cancellation propagation, idempotent event handling, reconne
 
 `scripts/run_real_pipeline.py` adds the executed local path: WAV fixture -> faster-whisper tiny/int8 CPU -> deterministic agent -> Piper Arabic/English WAV. It keeps model/provider loading outside the existing HORUS runtime.
 
+## Milestone 3 selection
+
+The measured policy selects faster-whisper `base/int8/forced-Arabic/beam5` for Egyptian, MSA, and the Arabic-led synthetic mixed fixture, while English uses auto-detection. WebRTC VAD replaces the earlier energy gate. Qwen2.5-1.5B Q4_K_M through llama.cpp is the selected experimental agent after passing turn-10 context and 16/20 schema actions; the boundary remains replaceable. Piper routes English replies to `en_US-lessac-medium`, Arabic replies to `ar_JO-kareem-medium`, and mixed replies by dominant output script with an Arabic tie-break. The system instruction is prepended outside the bounded rolling conversation window.
+
 ## Sources
 
 [1] https://developers.facebook.com/docs/whatsapp/cloud-api/calling

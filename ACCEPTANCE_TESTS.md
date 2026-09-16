@@ -31,6 +31,21 @@
 | M2-13 | NOT YET MEASURED | Real local agent model; deterministic agent used because no suitable pre-existing local runtime was found |
 | M2-14 | PASS | Recovery recorded for wrong dataset config, float WAV, and TTS ONNX allocation failure |
 
+## Milestone 3 evidence
+
+| ID | Result | Evidence |
+|---|---|---|
+| M3-01 | PASS | `M3_BENCHMARK.md`: tiny/int8 auto, base/int8 auto, and base/int8 forced-Arabic beam5; 72 measured transcriptions plus warm-ups on the same 8 fixtures |
+| M3-02 | PASS | Piper kareem-medium and kareem-low each synthesized 7 phrases; the low alternative did not outperform medium; English E2E output uses lessac-medium |
+| M3-03 | PASS/PARTIAL | Qwen2.5 0.5B and 1.5B ran through llama.cpp; 1.5B retained turn-10 context and produced 16/20 valid schema tool actions; invalid actions failed closed |
+| M3-04 | PASS | 30 real category-aware turns with WebRTC VAD, policy-routed STT, Qwen2.5-1.5B, and policy-routed Arabic/English Piper voices; category WER and latency reported |
+| M3-05 | PASS | 20/20 barge-in cancellation runs; p95 0.105 ms at the software sink boundary; physical driver latency excluded |
+| M3-06 | BLOCKED/PARTIAL | Public Egyptian-labelled read speech available; conversational MasriSpeech route returned 404/401 without bypassing access controls |
+| M3-07 | PASS FOR STREAM ACCESS | 34 endpoints enumerated; a 250 ms input stream captured 4,000 frames then discarded them, and a silent 3,200-frame output stream opened; subjective quality not measured |
+| M3-08 | PASS | Missing model, malformed audio, adapter timeout/error, float WAV, dataset config, and TTS allocation failures actively exercised |
+| M3-09 | PASS | Before/after numbers in `M3_BENCHMARK.md` |
+| M3-10 | PASS | 19-test regression, compileall, secret scan, diff check, isolation, and corrected 30-turn rerun completed before review |
+
 ## Local prototype test matrix (implementation follows review)
 
 | ID | Test | Pass condition |

@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 import psutil
 from faster_whisper import WhisperModel
 from piper import PiperVoice
-from horus_local_voice.real_audio import inspect_pcm_wav, nearest_rank, word_error_rate
+from horus_local_voice.real_audio import nearest_rank, webrtc_vad_wav, word_error_rate
 
 ROOT = Path(__file__).parents[1]
 process = psutil.Process()
@@ -29,19 +29,19 @@ voices = {
 voice_load_ms = (time.perf_counter() - voice_load_started) * 1000
 rows, context = [], []
 started_all = time.perf_counter()
-for index in range(20):
+for index in range(30):
     item = manifest[index % len(manifest)]
     path = ROOT / item["file"]
     turn_started = time.perf_counter()
-    vad_started = time.perf_counter(); audio = inspect_pcm_wav(path); vad_ms = (time.perf_counter() - vad_started) * 1000
-    if not audio["speech_detected"]:
-        raise RuntimeError(f"VAD found no speech energy: {path}")
+    audio = webrtc_vad_wav(path); vad_ms = audio.latency_ms
+    if not audio.speech_detected:
+        raise RuntimeError(f"WebRTC VAD found no speech: {path}")
     stt_started = time.perf_counter(); segments, info = model.transcribe(str(path), beam_size=1, vad_filter=False); transcript = " ".join(segment.text.strip() for segment in segments).strip(); stt_ms = (time.perf_counter() - stt_started) * 1000
     language = "ar" if info.language == "ar" else "en"
     agent_started = time.perf_counter(); reply = "سمعتك، هكمل معاك." if language == "ar" else "I heard you; I'll continue."; agent_ms = (time.perf_counter() - agent_started) * 1000
     tts_started = time.perf_counter(); chunks = voices[language].synthesize(reply); first_chunk = next(chunks); first_audio_ms = (time.perf_counter() - tts_started) * 1000; chunk_count = 1 + sum(1 for _ in chunks); synthesis_ms = (time.perf_counter() - tts_started) * 1000
     context.append(transcript)
-    rows.append({"turn": index + 1, "file": item["file"], "detected_language": info.language, "vad_ms": round(vad_ms, 2), "vad_rms": round(audio["rms"], 2), "stt_ms": round(stt_ms, 2), "agent_first_output_ms": round(agent_ms, 3), "tts_first_audio_ms": round(first_audio_ms, 2), "tts_synthesis_ms": round(synthesis_ms, 2), "tts_chunks": chunk_count, "end_to_end_ms": round((time.perf_counter() - turn_started) * 1000, 2), "wer": round(word_error_rate(item["expected"], transcript), 4), "observed": transcript})
+    rows.append({"turn": index + 1, "file": item["file"], "detected_language": info.language, "vad_ms": round(vad_ms, 2), "vad_voiced_ratio": round(audio.voiced_ratio, 4), "stt_ms": round(stt_ms, 2), "agent_first_output_ms": round(agent_ms, 3), "tts_first_audio_ms": round(first_audio_ms, 2), "tts_synthesis_ms": round(synthesis_ms, 2), "tts_chunks": chunk_count, "end_to_end_ms": round((time.perf_counter() - turn_started) * 1000, 2), "wer": round(word_error_rate(item["expected"], transcript), 4), "observed": transcript})
 summary = {}
 for key in ["vad_ms", "stt_ms", "agent_first_output_ms", "tts_first_audio_ms", "tts_synthesis_ms", "end_to_end_ms"]:
     values = [row[key] for row in rows]; summary[key] = {"min": min(values), "median": nearest_rank(values, 0.5), "p95": nearest_rank(values, 0.95), "max": max(values)}
