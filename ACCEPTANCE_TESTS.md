@@ -71,7 +71,7 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | ID | Result | Evidence |
 |---|---|---|
 | M4-01 | PASS | Two genuine 30 ms chunk-fed STT candidates, 20 turns each after warm-up; 60 partials per candidate, all turns had multiple deduplicated hypotheses; selected p95 first-partial after availability 2,211.84 ms and final p95 1,984.23 ms |
-| M4-02 | PASS | Selected robust-1200ms endpoint policy: 40 trials, 0 false cuts, decision p95 0.0418 ms; the 50-turn rerun applied VAD/endpointing on every fresh chunk stream |
+| M4-02 | PASS | Selected patient-600ms: 11/40 false cuts, decision p95 0.0418 ms; the 50-turn rerun applied VAD/endpointing on every fresh chunk stream |
 | M4-03 | PASS | Qwen2.5-1.5B streamed on all 50 sustained turns; system retained and pinned value `7319` recalled at turn 50 |
 | M4-04 | PASS | Piper synthesized incrementally from streamed model text on all 50 sustained turns; explicit per-chunk Arabic/English routing |
 | M4-05 | PASS/PARTIAL | 50 consecutive fresh full-pipeline turns: 150 partials, 5 interruptions, 3 recoveries, 0 drops/duplicates/stale events/cancel failures; latency still misses the M3 baseline |
