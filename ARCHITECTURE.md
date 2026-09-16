@@ -1,23 +1,55 @@
-# HORUS AI Agent — Architecture
+# HORUS AI Agent — Proposed Architecture
 
-## Bootstrap architecture
+## Boundary
 
-GitHub is the coordination plane for this project:
+Milestone 1 defines interfaces only. Existing HORUS runtime systems are protected and unchanged. No provider, credential, routing, deployment, or WhatsApp account configuration is modified.
 
-- **Issue #1** is the bootstrap entry point and initial control contract.
-- **Feature branches** isolate proposed changes.
-- **Pull requests** carry milestone artifacts, tests, reports, review comments, and requested changes.
-- **`main`** is the reviewed baseline.
-- **Repository documents** hold durable, non-secret project state.
+## Logical components
 
-## System boundary
+```text
+Approved channel adapter (future)
+  -> call/event normalizer
+  -> audio ingress buffer
+  -> VAD / turn detector
+  -> streaming STT adapter
+  -> session + memory policy
+  -> agent/reasoning + authorized tools
+  -> streaming TTS adapter
+  -> interruption controller
+  -> audio egress / channel adapter
 
-Existing HORUS systems are external protected dependencies during bootstrap. This repository does not modify or reconfigure them. Providers, credentials, routing, deployments, and runtime integrations are out of scope until explicitly specified and reviewed.
+Fallback channel adapter (text or voice note) uses the same session contract.
+Telemetry receives timestamps, state transitions, errors, and redacted IDs only.
+```
 
-## Future architecture decision points
+## Adapter contracts
 
-Before product implementation, the project must decide and document the runtime components, interfaces, data flows, trust boundaries, failure behavior, deployment model, observability, and rollback strategy. These decisions must be testable and must not require paid services or billing by default.
+- `ChannelAdapter`: capability discovery, session lifecycle, inbound events, outbound audio/message, fallback.
+- `AudioStream`: bounded frames, timestamps, cancellation, backpressure, codec metadata.
+- `SpeechToText`: partial/final hypotheses with confidence and timing.
+- `AgentRuntime`: immutable conversation input, tool policy, streamed output events.
+- `TextToSpeech`: cancellable audio chunks with first-byte timing.
+- `SessionStore`: scoped context, TTL/retention policy, optimistic versioning.
+- `ToolExecutor`: allowlist, validation, audit event, timeout, cancellation, dry-run mode.
 
-## Change control
+## Channel decision
 
-Structural changes require a checkpoint, a reversible change, tests, and review in a pull request. Secrets belong only in the approved runtime secret-management mechanism; never in GitHub repository content.
+The preferred production branch is Meta's official WhatsApp Business Calling API, conditional on account eligibility, review, and verified live-media details.[1][5] A local audio harness is the first implementation boundary. A third-party bridge is not selected until terms, privacy, price, and technical contract are reviewed. Private WhatsApp protocol automation is rejected.
+
+## Local pipeline decision matrix
+
+| Choice | Latency | Arabic quality | Windows | Reversibility/cost | Decision |
+|---|---|---|---|---|---|
+| Silero VAD + whisper.cpp + local llama.cpp adapter + Piper | Low-to-moderate on CPU/GPU; streaming interfaces and cancellation are explicit | Whisper multilingual baseline plus locally evaluated Arabic voice; dialect quality is a test gate | Native Windows support for whisper.cpp; local components | No account/billing; adapters isolate model swaps; Piper code/voice licenses require review.[11][12][14][15] | **Preferred M2 prototype** |
+| WebRTC VAD + faster-whisper + local llama.cpp adapter + OS/local TTS | Potentially low VAD/STT latency; more Python/runtime overhead | Whisper baseline; OS voice may be weaker or unavailable for Egyptian Arabic | Windows viable; simpler Python experimentation | Free/local, but TTS portability and model downloads vary; easy to replace | Benchmark alternative |
+
+The preferred stack is a recommendation for the local harness only, not an approval to change existing HORUS routing or providers. Select the winner after the latency, Arabic/Egyptian scripted-set, interruption, and resource tests in the acceptance matrix.
+
+## Reliability
+
+Use bounded queues, cancellation propagation, idempotent event handling, reconnect/backoff, explicit session states, and a deterministic fallback transition. Metrics must include ingress-to-partial-STT, turn-final-to-first-token, response-to-first-audio, barge-in-stop, end-to-end turn, fallback rate, error rate, and dropped/late event counts.
+
+## Sources
+
+[1] https://developers.facebook.com/docs/whatsapp/cloud-api/calling
+[5] https://developers.facebook.com/docs/whatsapp/cloud-api/calling/app-review-guidelines

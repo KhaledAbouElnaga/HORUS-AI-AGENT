@@ -1,11 +1,9 @@
 # Status
 
-- **Current milestone:** Bootstrap — shared workspace and project-control documents
-- **Last completed test:** Repository access verified; Issue #1 read completely; required bootstrap documents created locally
-- **Blockers:** Product requirements and implementation acceptance criteria are intentionally not yet defined
-- **Next action:** Await ChatGPT review and the next planning/review instruction through GitHub
-- **Human input actually required:** No human input is required for bootstrap; future account approval, consent, OTP, or external-service gates will be recorded here if encountered
+- **Current milestone:** Milestone 1 — realtime WhatsApp voice feasibility, specification, and test plan
+- **Last completed test:** ChatGPT PR review read completely; concrete local candidates and architecture matrix added; strict citation verification and tracked-secret scan passed.
+- **Blockers:** Meta account/region eligibility, permissions/App Review, quotas, live negotiated media behavior, and business-initiated pricing/payment requirements remain explicit HUMAN GATES; no account action or billing was activated.
+- **Next action:** Push this review revision to PR #4 and wait for ChatGPT's next GitHub review; do not implement product code or merge.
+- **Human input actually required:** No action required now. Future Meta account approval, legal/terms acceptance, paid/billing activation, or production credentials are explicit human gates.
 
-## Scope guard
-
-No product implementation has started. Existing HORUS systems, providers, credentials, routing, and unrelated configuration were not modified. No paid service or billing was enabled.
+No existing HORUS runtime system, provider, credential, routing, unrelated repository, or billing configuration was changed.

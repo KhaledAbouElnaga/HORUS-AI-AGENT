@@ -2,30 +2,26 @@
 
 ## D-001 — GitHub is the shared coordination channel
 
-**Status:** Accepted for bootstrap
+Accepted. Issues and PRs are the source of project instructions and review feedback.
 
-This private repository is the single shared workspace for coordination between Hermes and ChatGPT. Issue and pull-request threads are the review record.
+## D-002 — Milestone 1 is research/specification only
 
-## D-002 — Bootstrap precedes product implementation
+Accepted. No product implementation, external integration, billing, or existing HORUS runtime changes belong in this PR.
 
-**Status:** Accepted
+## D-003 — Official Calling API is conditional, not assumed
 
-The six bootstrap documents are the only deliverables in this milestone. Product implementation waits for a reviewed specification and architecture.
+Meta documents a WhatsApp Business Calling API for VoIP call initiation and receipt.[1] We select it as the candidate production path only after account eligibility, permissions, review, and live-media contract are verified. We do not infer availability from documentation alone.
 
-## D-003 — Existing HORUS systems are protected
+## D-004 — Local audio harness before channel integration
 
-**Status:** Accepted
+Accepted. It isolates speech/agent/barge-in behavior from WhatsApp approval and reduces cost and risk.
 
-Bootstrap must not modify existing systems, providers, credentials, routing, or unrelated configuration.
+## D-005 — Reject private WhatsApp protocol automation
 
-## D-004 — No paid services or billing during bootstrap
+Accepted. It is not the default architecture because it creates policy, reliability, account, and security risk.
 
-**Status:** Accepted
+## D-006 — Fallback is a first-class path
 
-Bootstrap uses repository and local documentation workflows only. No paid service is activated and no billing is enabled.
+Accepted. Text and voice-note handling share the session contract and are used when realtime calling is unavailable.
 
-## D-005 — No secrets in GitHub
-
-**Status:** Accepted
-
-Credentials, tokens, cookies, API keys, and other secret material are excluded from repository content and history.
+[1] https://developers.facebook.com/docs/whatsapp/cloud-api/calling

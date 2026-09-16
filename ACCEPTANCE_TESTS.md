@@ -1,17 +1,32 @@
-# Acceptance Tests
+# Milestone 1 Acceptance Tests
 
-## Bootstrap milestone
+## Research/specification evidence
 
-| ID | Acceptance criterion | Verification |
+| ID | Result | Evidence |
 |---|---|---|
-| B-01 | The six bootstrap deliverables exist at repository root. | `test -f` for every required file. |
-| B-02 | Bootstrap contains no product implementation. | Review the branch diff and repository file list. |
-| B-03 | Existing HORUS systems, providers, credentials, routing, and unrelated config are untouched. | Changes are confined to this new repository and bootstrap documents. |
-| B-04 | No paid service or billing action is introduced. | Review diff and GitHub activity. |
-| B-05 | No secret material is committed. | Manual review plus secret-pattern scan of tracked text. |
-| B-06 | `STATUS.md` states milestone, last completed test, blockers, next action, and human-input requirement. | Read `STATUS.md`. |
-| B-07 | The milestone is submitted for review through a feature-branch pull request. | Inspect the GitHub pull request. |
+| M1-R1 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, Capability classification: official API, webhooks, SIP boundary, private protocol, third-party bridge, local prototype, fallback |
+| M1-R2 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, access date and Sources [1]–[15]; strict citation verification passed |
+| M1-R3 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, Official Calling media-path verification and Open research gates; eligibility, review, pricing, and live account contract are explicit gates |
+| M1-R4 | PASS | Git diff contains documentation only; no Meta account/billing/credential/runtime change; secret scan passed |
+| M1-R5 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, Concrete local pipeline candidates and preferred Milestone-2 stack |
+| M1-R6 | BLOCKED | Account entitlement, regional eligibility, approval, quotas, and live negotiated media behavior require Meta account access; no account action is authorized in this milestone |
+| M1-R7 | PASS | `ARCHITECTURE.md` decision matrix and `ACCEPTANCE_TESTS.md` local test matrix define measurable prototype validation before channel integration |
 
-## Product milestones
+## Local prototype test matrix (implementation follows review)
 
-Product acceptance tests are intentionally deferred until the product specification and architecture are approved through GitHub.
+| ID | Test | Pass condition |
+|---|---|---|
+| L1 | Arabic Egyptian scripted turns | All expected intents/transcripts meet the agreed quality threshold |
+| L2 | English scripted turns | All expected intents/transcripts meet the agreed quality threshold |
+| L3 | Partial STT timing | p95 <= 800 ms |
+| L4 | First response audio | p95 <= 1,500 ms |
+| L5 | Barge-in | Current TTS is cancelled/ducked within p95 <= 250 ms and listening resumes |
+| L6 | Ten-turn context | 10/10 context assertions pass |
+| L7 | Tool safety | Denied, malformed, timed-out, and dry-run tools fail closed and are audited without secrets |
+| L8 | Failure fallback | Simulated channel failure transitions to text/voice-note mode within 2 s |
+| L9 | Reconnect/idempotency | Duplicate and out-of-order events do not duplicate turns or tool effects |
+| L10 | Observability | Required redacted timings and state transitions are emitted |
+| L11 | Secret scan | No credential/token/API-key pattern in tracked files or history |
+| L12 | Existing-system isolation | No files/configs/processes outside this repository are changed |
+
+Evidence for implementation tests must be attached to the milestone PR; this milestone stops at specification.
