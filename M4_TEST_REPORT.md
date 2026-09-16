@@ -17,7 +17,7 @@
 ## Exact current measurements
 
 - Chunk-fed selected STT: first-partial-after-availability p50/p95 1,041.88/2,211.84 ms; final p50/p95 1,173.59/1,984.23 ms; mean WER 0.4455.
-- Full-pipeline 50-turn run: STT-total p95 first/last ten 3,902.73/4,372.17 ms; agent first-token p95 2,146.98/2,746.58 ms; RSS 1,691.92→2,127.54 MB; mean WER 0.6321.
+- Full-pipeline 50-turn run: STT-total p95 first/last ten 3,607.24/3,609.86 ms; agent first-token p95 1,332.59/1,402.96 ms; RSS 1,688.88→2,140.57 MB; mean WER 0.6321.
 - Live duplex: callback silence p50/p95 0.0177/0.0234 ms; physical stop p50/p95 230.1882/230.4233 ms.
 - Prior 40-turn first-playable p95 remains 4,404.22 ms versus M3 aggregate p95 4,146.59 ms. The latency target remains **PARTIAL / not beaten**.
 

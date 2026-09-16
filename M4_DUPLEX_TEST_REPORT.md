@@ -2,15 +2,15 @@
 
 ## True overlapping live-device trials
 
-Ten trials used a real `sounddevice.Stream` with input and output callbacks active at the same time. Piper generated real non-zero speech PCM, scaled to 20%, and the callback played it through the default Windows output device while the default microphone callback was receiving frames.
+Ten completed trials used concurrent live `sounddevice.InputStream` and `OutputStream` callbacks at the same time on dynamically selected C-Media WASAPI devices. Piper generated real non-zero speech PCM, scaled to 20%, while microphone callbacks received and immediately discarded input frames.
 
-After 180 ms of overlap, a deterministic speech-start event was injected into the live input-analysis path. That event cancelled active playback; subsequent output callback frames were zero-filled, the physical stream was stopped, and stale-output counters were checked. Raw microphone audio stayed in callback memory only and was never persisted.
+After ten live input callbacks (about 377 ms measured overlap), a deterministic speech-start event was injected into the live input-analysis path. That event cancelled active playback; subsequent output callback frames were zero-filled, the physical stream was stopped, and stale-output counters were measured. Raw microphone audio stayed in callback memory only and was never persisted.
 
 | Metric | Exact result |
 |---|---:|
 | Overlapping live trials | 10 |
-| Trials with non-zero active output | 10/10 |
-| Trials with live microphone callbacks | 10/10 |
+| Trials with non-zero active output | 10/10; 1,759 measured non-zero samples/trial |
+| Trials with live microphone callbacks | 10/10; RMS peak 1,510.11–2,628.53 |
 | Successful cancellation / no stale output | 10/10 |
 | Callback-to-silence p50 / p95 | 0.0177 / 0.0234 ms |
 | Physical stream-stop p50 / p95 | 230.1882 / 230.4233 ms |

@@ -42,7 +42,7 @@ All 40 candidate turns produced multiple partial hypotheses. The cumulative beam
 
 ## Review-corrective 50-turn full pipeline
 
-The 50-turn sustained rerun used fresh chunk-fed STT on every turn, not cached evidence. It produced 150 partials; STT-total p95 changed from 3,902.73 ms in turns 1–10 to 4,372.17 ms in turns 41–50. Agent first-token p95 changed from 2,146.98 to 2,746.58 ms. M4 therefore still does **not** beat the M3 latency baseline.
+The 50-turn sustained rerun used fresh chunk-fed STT on every turn, not cached evidence. It produced 150 partials; STT-total p95 changed from 3,607.24 ms in turns 1–10 to 3,609.86 ms in turns 41–50. Agent first-token p95 changed from 1,332.59 to 1,402.96 ms. M4 therefore still does **not** beat the M3 latency baseline.
 
 ## Three optimization experiments
 

@@ -17,10 +17,10 @@ The run covered Egyptian-labelled Arabic, MSA, English, and mixed fixtures. It i
 | Recoveries | 3 |
 | Late pinned-memory recall | PASS (`7319`) |
 | Mean final STT WER | 0.6321 |
-| STT total p95, turns 1–10 / 41–50 | 3,902.73 / 4,372.17 ms |
-| Agent first-token p95, turns 1–10 / 41–50 | 2,146.98 / 2,746.58 ms |
-| RSS start / end | 1,691.92 / 2,127.54 MB |
-| RSS growth | 435.62 MB |
+| STT total p95, turns 1–10 / 41–50 | 3,607.24 / 3,609.86 ms |
+| Agent first-token p95, turns 1–10 / 41–50 | 1,332.59 / 1,402.96 ms |
+| RSS start / end | 1,688.88 / 2,140.57 MB |
+| RSS growth | 451.69 MB |
 | Queue high-water / drops | 1 / 0 |
 | Duplicate / stale events | 0 / 0 |
 
