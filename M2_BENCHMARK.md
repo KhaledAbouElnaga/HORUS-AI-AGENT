@@ -2,13 +2,14 @@
 
 | Path | Result |
 |---|---:|
-| STT | 20 turns; p50 751.22 ms, p95 818.60 ms, max 832.83 ms |
-| Agent first output | p50/p95 0.00 ms (deterministic in-process adapter) |
-| TTS first-audio proxy | p50 75.75 ms, p95 88.03 ms, max 99.84 ms |
-| End-to-end | p50 830.91 ms, p95 906.27 ms, max 920.88 ms |
-| Model load | 25,406.15 ms cold load from first STT run |
-| Process RSS | 428.7 MB at completion; CPU path, no GPU |
-| WER proxy | mean 0.4923 over 20 repeated fixture turns |
+| STT | 20 turns; p50 959.62 ms, p95 1075.13 ms, max 1089.04 ms |
+| Agent first output | p50/p95 0.001 ms (deterministic in-process adapter) |
+| TTS first-audio | p50 233.20 ms, p95 368.06 ms, max 420.06 ms |
+| End-to-end | p50 1199.54 ms, p95 1428.56 ms, max 1469.53 ms |
+| Model load | 965.50 ms warm-cache load in latest run; first cold run 25,406.15 ms |
+| Voice load | 3519.07 ms for two Piper voices |
+| Process RSS | 481.3 MB at completion; CPU path, no GPU |
+| WER proxy | mean 0.5411 over 20 turns (8 fixture types) |
 | Barge-in | 10/10 active-chunk cancellations; min/median/p95 0.0 ms at sink boundary; speaker hardware latency not measured |
 | Session | 20 real audio turns retained; 10-turn continuity assertion PASS |
 
