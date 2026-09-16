@@ -4,39 +4,33 @@
 
 | Area | Result |
 |---|---|
-| Incremental STT | PASS — 32 utterances / 64 real prefix inferences |
-| Endpointing | PASS — selected robust-1200ms policy: 40 trials, 0 false cuts, p95 decision 0.0418 ms; fast/patient tradeoff retained as comparison evidence |
-| Agent streaming | PASS — 20 prompts plus 15-turn continuity; system retained; memory PASS |
-| TTS streaming | PASS — sentence and phrase strategies, 8 runs each |
-| Pipelined E2E | PASS — 40 turns, 10 per category; p95 first playable 4,404.22 ms |
-| Sustained duplex | PASS — 50 consecutive turns, 5 interruptions, 3 recoveries, 0 dropped/duplicated events |
-| Device-level duplex interruption | PASS — 10 input/output stream trials; silent-output stop p95 63.57 ms, no stale resume |
-| Optimization | PASS — STT beam, LLM threads, and TTS chunking measured |
-| Language expansion | PARTIAL — 10 Egyptian + 10 mixed synthetic substitutes; natural data still blocked |
-| Barge-in | PASS — 30/30 across generation/TTS/sink; cancel p50/p95 0.01/0.02 ms; zero stale output |
-| Failure/recovery | PASS — 9/9 focused required injections plus 11/11 original benchmark cases failed closed |
-| Automated regression | PASS — 31 tests |
-| Billing/provider isolation | PASS — no external runtime/provider/billing changes |
+| Incremental STT | PASS — two genuine 30 ms chunk-fed candidates, 20 turns each, 60 partials each, all turns with multiple deduplicated hypotheses |
+| Endpointing | PASS — robust 1200 ms policy, 40 trials, 0 false cuts; applied on all 50 fresh sustained streams |
+| Agent streaming | PASS — Qwen2.5-1.5B streamed on 50 turns; system retained; pinned `7319` recalled at turn 50 |
+| TTS streaming | PASS — Piper synthesis began from streamed phrase chunks on every turn; Arabic/English routing explicit |
+| Sustained E2E | PASS — 50 fresh full-pipeline turns, 150 partials, 5 interruptions, 3 recoveries, 0 drops/duplicates/stale events/cancel failures |
+| True live duplex | PASS — 10/10 overlapping active-audio input/output trials; physical stop p95 230.4233 ms, 0 stale output |
+| Language expansion | PARTIAL — controlled synthetic coverage only; natural Egyptian/code-switch quality remains unproven |
+| Failure/recovery | PASS — focused 9/9 runner plus earlier 11-case suite failed closed |
+| Billing/provider isolation | PASS — no external runtime/provider/billing/credential changes |
 
-## Failure injections
+## Exact current measurements
 
-The focused run executed microphone/input loss, output-device open failure, STT exception and timeout, agent timeout and cancellation, TTS failure, queue overload/backpressure, and session restart/reconnect: 9/9 passed. The original benchmark also executed 11 fail-closed cases covering false endpointing, duplicate/out-of-order chunks, missing voice, oversized context, and low-memory protection.
+- Chunk-fed selected STT: first-partial-after-availability p50/p95 1,041.88/2,211.84 ms; final p50/p95 1,173.59/1,984.23 ms; mean WER 0.4455.
+- Full-pipeline 50-turn run: STT-total p95 first/last ten 3,902.73/4,372.17 ms; agent first-token p95 2,146.98/2,746.58 ms; RSS 1,691.92→2,127.54 MB; mean WER 0.6321.
+- Live duplex: callback silence p50/p95 0.0177/0.0234 ms; physical stop p50/p95 230.1882/230.4233 ms.
+- Prior 40-turn first-playable p95 remains 4,404.22 ms versus M3 aggregate p95 4,146.59 ms. The latency target remains **PARTIAL / not beaten**.
 
-## Known failures and limitations
+## Boundary
 
-- M4 did not reduce aggregate p95 below M3: first-playable p95 4,404.22 ms versus M3 E2E p95 4,146.59 ms.
-- The selected robust endpoint policy had 0/40 false cuts, but its 1,200 ms tail misses the 900 ms target; faster policies had 25/40 and 11/40 false cuts.
-- Mixed synthetic WER remains 0.7724 with the selected route.
-- Silent output-stream stop timing was measured; acoustic loudspeaker stop time and subjective quality were NOT MEASURED.
-- Synthetic Piper fixtures do not establish spontaneous Egyptian or natural code-switch quality.
+Speech-start in the hardware duplex trial is deterministically injected while a real microphone callback and non-zero Piper output are concurrently active. Acoustic echo cancellation, human speech detector quality, subjective speaker quality, and natural conversational Egyptian/code-switch quality are **NOT MEASURED**. Raw audio was not retained.
 
 ## Commands
 
 ```bash
-PYTHONPATH=src python scripts/generate_m4_language_fixtures.py
-PYTHONPATH=src python scripts/benchmark_m4_streaming.py
 PYTHONPATH=src python scripts/benchmark_m4_stt_candidates.py
 PYTHONPATH=src python scripts/benchmark_m4_completion.py
+PYTHONPATH=src python scripts/benchmark_m4_live_duplex.py
 PYTHONPATH=src python scripts/benchmark_m4_failure_recovery.py
 PYTHONPATH=src python -m pytest -q
 python -m compileall -q src scripts tests

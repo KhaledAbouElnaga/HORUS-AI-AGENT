@@ -1,15 +1,28 @@
 # Milestone 4 Duplex / Barge-in Report
 
-## Executed evidence
+## True overlapping live-device trials
 
-- Software full-duplex path: 30 local interruption trials spanning generation, TTS synthesis, and software sink cancellation.
-- Device-level full-duplex path: 10 trials using the default Windows input/output streams. Captures were held in memory and discarded immediately; no ambient audio was written.
-- Software cancellation: p95 0.02 ms in the streaming benchmark; stale output was suppressed in all trials.
-- Physical output stop: p50 56.01 ms, p95 63.57 ms, 0 stale resumptions, 0 failures.
-- Input listening remains active while the software output path is active. A speech-start cancellation advances a monotonic epoch and invalidates generation, queued synthesis, and sink emission.
+Ten trials used a real `sounddevice.Stream` with input and output callbacks active at the same time. Piper generated real non-zero speech PCM, scaled to 20%, and the callback played it through the default Windows output device while the default microphone callback was receiving frames.
 
-## Boundary
+After 180 ms of overlap, a deterministic speech-start event was injected into the live input-analysis path. That event cancelled active playback; subsequent output callback frames were zero-filled, the physical stream was stopped, and stale-output counters were checked. Raw microphone audio stayed in callback memory only and was never persisted.
 
-The device measurement used silent output frames for unattended safety. It proves simultaneous input/output stream access and stop propagation, not acoustic echo performance, audible loudspeaker stop time, or subjective quality. Meta/WhatsApp integration was not used.
+| Metric | Exact result |
+|---|---:|
+| Overlapping live trials | 10 |
+| Trials with non-zero active output | 10/10 |
+| Trials with live microphone callbacks | 10/10 |
+| Successful cancellation / no stale output | 10/10 |
+| Callback-to-silence p50 / p95 | 0.0177 / 0.0234 ms |
+| Physical stream-stop p50 / p95 | 230.1882 / 230.4233 ms |
+| Post-cancel non-zero samples | 0 |
+| Raw input retained | No |
 
-Raw evidence: `artifacts/m4_completion_results.json` and `artifacts/m4_streaming_results.json` (ignored generated artifacts).
+This is a real overlapping hardware I/O test with active synthesized speech. The speech-start decision is deterministically injected while the microphone callback is active; it is not a claim of validated acoustic echo cancellation or human speech-detection quality. Physical stop p95 meets the 250 ms target narrowly; subjective loudspeaker quality remains **NOT MEASURED**.
+
+The sustained full-pipeline run separately executed five generation/TTS cancellations with zero cancellation failures. The earlier software benchmark executed 30/30 phase-varied cancellations with zero stale output.
+
+Raw evidence: `artifacts/m4_live_duplex_overlap.json` and `artifacts/m4_real_pipeline_50.json`. Reproduce with:
+
+```bash
+PYTHONPATH=src python scripts/benchmark_m4_live_duplex.py
+```

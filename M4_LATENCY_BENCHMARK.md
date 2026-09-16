@@ -29,9 +29,20 @@ The benchmark starts chunk synthesis as soon as streamed model text reaches punc
 
 M3 aggregate E2E p95 was 4,146.59 ms. M4 first-playable p95 is 4,404.22 ms and total p95 is 4,427.31 ms, so this implementation did **not** beat M3 aggregate latency. It adds real incremental results and early agent-to-TTS overlap, but long rolling context and prefix inference offset that gain.
 
-## Repeated streaming STT candidates
+## Review-corrective chunk-fed STT candidates
 
-After warm-up, two configurations each processed the same 20-turn Arabic/English/mixed set. Rolling 50% beam-1 measured partial/final p95 4,391.71/2,824.28 ms and mean WER 0.5231. Windowed 75% beam-5 measured 3,852.81/3,921.80 ms and mean WER 0.4432. Beam-1 remains selected for partial latency while beam-5 protects final quality. Full rows are in ignored `artifacts/m4_stt_candidates_checkpoint.json`.
+After warm-up, both configurations processed the same 20-turn Arabic/English/mixed set as fixed 30 ms chunks. Each turn emitted three deduplicated partial checkpoints while chunks were arriving, tracked revisions, then ran a final transcript. This is not one prefix replay.
+
+| Candidate | Turns / partials | First partial after availability p50 / p95 | Final p50 / p95 | Mean WER | RSS | Drops |
+|---|---:|---:|---:|---:|---:|---:|
+| cumulative 33/66/90%, beam 1 partial, beam 5 final | 20 / 60 | 1,041.88 / 2,211.84 ms | 1,173.59 / 1,984.23 ms | 0.4455 | 217.42 MB | 0 |
+| rolling 3 s at 25/50/75%, beam 5 | 20 / 60 | 1,161.24 / 2,993.46 ms | 1,225.52 / 1,999.93 ms | 0.4455 | 220.59 MB | 0 |
+
+All 40 candidate turns produced multiple partial hypotheses. The cumulative beam-1 partial route is selected for lower p95 partial latency; final beam 5 is retained for quality. Full rows, per-category WER, hypotheses, revisions, queue high-water, and resources are in ignored `artifacts/m4_stt_candidates_chunked.json`.
+
+## Review-corrective 50-turn full pipeline
+
+The 50-turn sustained rerun used fresh chunk-fed STT on every turn, not cached evidence. It produced 150 partials; STT-total p95 changed from 3,902.73 ms in turns 1–10 to 4,372.17 ms in turns 41–50. Agent first-token p95 changed from 2,146.98 to 2,746.58 ms. M4 therefore still does **not** beat the M3 latency baseline.
 
 ## Three optimization experiments
 

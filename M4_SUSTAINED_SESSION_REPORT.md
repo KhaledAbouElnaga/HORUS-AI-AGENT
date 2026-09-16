@@ -1,25 +1,33 @@
 # Milestone 4 Sustained Session Report
 
-## 50-turn session
+## Executed 50-turn real streaming session
 
-The local loop completed 50 consecutive turns using previously measured real STT candidate rows, a live local Qwen stream per turn, and live Piper synthesis per turn across Arabic/Egyptian-labelled, MSA, English, and mixed fixtures. It included 5 interruptions, 3 recoverable component restarts, and context recall from the pinned early-session fact through the final turn.
+Every turn executed the full local M4 path; no cached STT row was reused:
 
-| Metric | Result |
+`30 ms PCM chunks -> bounded ingress -> WebRTC VAD/1200 ms endpoint -> three incremental faster-whisper partials -> final STT -> streamed Qwen2.5-1.5B -> incremental phrase-chunked Piper`
+
+The run covered Egyptian-labelled Arabic, MSA, English, and mixed fixtures. It included five interruptions (turns 10, 20, 30, 40, 45), three component recoveries (turns 12, 28, 44), and pinned-memory recall at turn 50.
+
+| Metric | Exact result |
 |---|---:|
-| Turns | 50 |
-| Interruptions | 5 |
+| Consecutive full-pipeline turns | 50/50 |
+| Incremental partial hypotheses | 150 (3 per turn) |
+| Turns with multiple partials | 50/50 |
+| Interruptions / cancellation failures | 5 / 0 |
 | Recoveries | 3 |
-| Dropped events | 0 |
-| Duplicated events | 0 |
-| RSS start / end | 2003.70 / 2065.77 MB |
-| RSS growth | 62.07 MB |
-| Queue high-water | 0 |
-| Agent first-token p95, turns 1–10 / 41–50 | 4428.85 / 2078.88 ms |
+| Late pinned-memory recall | PASS (`7319`) |
+| Mean final STT WER | 0.6321 |
+| STT total p95, turns 1–10 / 41–50 | 3,902.73 / 4,372.17 ms |
+| Agent first-token p95, turns 1–10 / 41–50 | 2,146.98 / 2,746.58 ms |
+| RSS start / end | 1,691.92 / 2,127.54 MB |
+| RSS growth | 435.62 MB |
+| Queue high-water / drops | 1 / 0 |
+| Duplicate / stale events | 0 / 0 |
 
-An earlier long-run attempt ended with a Windows access violation in the local Qwen runtime at turn 20. That failed attempt was not counted as completion. The final harness catches worker exceptions, emits a safe non-tool fallback, records the recovery, and preserves the session instead of treating the failed model turn as a successful model response.
+The increase in RSS and late-run agent latency is reported as a measured limitation, not hidden. The run used faster-whisper `tiny/int8` for repeated full-pipeline feasibility and Qwen2.5-1.5B Q4_K_M for the streamed agent. The separate chunk-fed candidate benchmark uses faster-whisper `base/int8` for quality comparison.
 
-## Quality boundary
+Raw evidence: `artifacts/m4_real_pipeline_50.json` (ignored generated artifact). Reproduce with:
 
-This is a reproducible local sustained agent/TTS session with replayed measured STT results, not a claim that 50 fresh microphone utterances were transcribed or that production call quality was established. Synthetic Egyptian and code-switch fixtures are documented separately. No raw audio was retained.
-
-Raw rows: `artifacts/m4_completion_results.json` -> `sustained.rows`.
+```bash
+PYTHONPATH=src python scripts/benchmark_m4_completion.py
+```

@@ -17,3 +17,6 @@
 - Endpoint silence thresholds need stress fixtures with internal pauses. The more patient policy reduced false cuts but did not eliminate them.
 - Cancellation must be checked at generation, post-synthesis queue, and immediately before sink emission; one monotonic epoch makes stale output rejection testable.
 - Preserve durable facts outside the rolling chat window while always rebuilding context with the system instruction first.
+- A partial-prefix benchmark is not incremental streaming evidence: feed fixed-size chunks through ingress, emit multiple deduplicated hypotheses during arrival, track revisions, and finalize only after endpointing.
+- Full-duplex evidence requires simultaneous live input and non-zero output; sequential capture after silent playback only proves device access, not barge-in. Keep callback-silence and physical stream-stop latency separate.
+- Do not place a late-context assertion on an intentionally cancelled turn; keep interruption coverage and recall coverage independently observable.
