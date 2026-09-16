@@ -71,10 +71,10 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | ID | Result | Evidence |
 |---|---|---|
 | M4-01 | PASS | 32 utterances and 64 real incremental faster-whisper prefix inferences; final WER 0.3109 |
-| M4-02 | PARTIAL | Two endpoint policies, 40 trials each; patient policy selected but false-cut 11/40 stress trials |
-| M4-03 | PASS | 20 streamed Qwen prompts plus 12-turn continuity; system retained and pinned memory recalled |
+| M4-02 | PASS | Selected robust-1200ms endpoint policy: 40 trials, 0 false cuts, decision p95 0.0418 ms; fast/patient comparison remains documented with their stress tradeoffs |
+| M4-03 | PASS | 20 streamed Qwen prompts plus 15-turn continuity; system retained and pinned memory recalled |
 | M4-04 | PASS | Sentence and phrase Piper strategies, 8 runs each; explicit per-chunk Arabic/English routing |
-| M4-05 | PASS/PARTIAL | 40 pipelined turns completed; first-playable p95 4,404.22 ms, slower than M3 p95 4,146.59 ms |
+| M4-05 | PASS/PARTIAL | 50 consecutive sustained local turns completed with 5 interruptions and 3 recoveries; the separate pipelined E2E benchmark completed 40 turns and first-playable p95 was 4,404.22 ms, slower than M3 p95 4,146.59 ms |
 | M4-06 | PASS | Three measured experiments: STT beam, LLM threads, and TTS chunk strategy |
 | M4-07 | PARTIAL | 10 Egyptian-style and 10 mixed controlled synthetic fixtures; natural corpus still blocked; selected mixed WER 0.7724 |
 | M4-08 | PASS | 30/30 interruptions across generation/TTS/sink; zero stale output; cancel p95 0.02 ms |

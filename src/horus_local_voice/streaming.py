@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass, field
 from threading import Event, Lock
 from typing import Callable
+from collections import deque
 
 
 @dataclass(frozen=True)
@@ -144,15 +145,20 @@ class StreamState:
 @dataclass(frozen=True)
 class AudioChunk:
     sequence: int
-    captured_at_ns: int
+    captured_ns: int
     pcm: bytes
+    sample_rate: int = 16000
+
+    @property
+    def captured_at_ns(self):
+        return self.captured_ns
 
 
 class BoundedAudioIngress:
     """Bounded chunk queue with explicit backpressure and shutdown semantics."""
     def __init__(self, max_chunks: int = 8):
         if max_chunks < 1: raise ValueError("max_chunks must be positive")
-        self.max_chunks = max_chunks; self._chunks: list[AudioChunk] = []; self.state = "IDLE"; self.dropped = 0
+        self.max_chunks = max_chunks; self._chunks: list[AudioChunk] = []; self.state = "IDLE"; self.dropped = 0; self.high_water = 0
 
     def start(self) -> None:
         if self.state not in ("IDLE", "STOPPED"): raise RuntimeError("session already active")
@@ -162,13 +168,18 @@ class BoundedAudioIngress:
         if self.state != "LISTENING": return False
         if len(self._chunks) >= self.max_chunks:
             self.dropped += 1; return False
-        self._chunks.append(chunk); return True
+        self._chunks.append(chunk); self.high_water = max(self.high_water, len(self._chunks)); return True
 
     def pop(self) -> AudioChunk | None:
         return self._chunks.pop(0) if self._chunks else None
 
     def shutdown(self) -> None:
         self._chunks.clear(); self.state = "STOPPED"
+
+    close = shutdown
+
+    def __len__(self) -> int:
+        return self.depth
 
     @property
     def depth(self) -> int:
@@ -213,3 +224,65 @@ class PipelinedResponder:
             audio = self.synthesize(buffer.strip()); text_chunks += 1
             if self.epochs.is_current(epoch): self.emit_audio(audio); audio_chunks += 1
         return PipelineResult(text, text_chunks, audio_chunks, not self.epochs.is_current(epoch))
+
+
+
+
+class WavChunkIngress:
+    """Deterministic fixed-frame replay; chunks are never retained by the ingress."""
+    def __init__(self, path: str, frame_ms: int = 30):
+        self.path, self.frame_ms = path, frame_ms
+
+    def __iter__(self):
+        import wave
+        with wave.open(self.path, "rb") as wav:
+            if wav.getnchannels() != 1 or wav.getsampwidth() != 2:
+                raise ValueError("mono int16 PCM required")
+            count = wav.getframerate() * self.frame_ms // 1000
+            sequence = 0
+            while True:
+                pcm = wav.readframes(count)
+                if not pcm:
+                    break
+                yield AudioChunk(sequence, time.perf_counter_ns(), pcm, wav.getframerate())
+                sequence += 1
+
+
+class MicrophoneIngress:
+    """Short live fixed-frame captures with no file retention."""
+    def __init__(self, sample_rate: int = 16000, frame_ms: int = 30):
+        self.sample_rate, self.frame_ms = sample_rate, frame_ms
+
+    def capture(self, frames: int):
+        import sounddevice as sd
+        count = self.sample_rate * self.frame_ms // 1000
+        for sequence in range(frames):
+            pcm = sd.rec(count, samplerate=self.sample_rate, channels=1, dtype="int16", blocking=True)
+            yield AudioChunk(sequence, time.perf_counter_ns(), pcm.tobytes(), self.sample_rate)
+            del pcm
+
+
+BoundedFrameQueue = BoundedAudioIngress
+
+
+class StreamSession:
+    def __init__(self, session_id: str, queue_size: int = 8):
+        self.session_id = session_id
+        self.state = "created"
+        self.queue = BoundedFrameQueue(queue_size)
+        self.restarts = 0
+        self.metrics: list[dict] = []
+
+    def start(self):
+        if self.state not in {"created", "stopped"}:
+            raise RuntimeError("invalid session transition")
+        self.state = "listening"
+
+    def recover(self, component: str):
+        self.restarts += 1
+        self.state = "listening"
+        self.metrics.append({"event": "recovery", "component": component, "at_ns": time.perf_counter_ns()})
+
+    def stop(self):
+        self.state = "stopped"
+        self.queue.close()

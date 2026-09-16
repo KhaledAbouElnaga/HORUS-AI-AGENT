@@ -5,10 +5,12 @@
 | Area | Result |
 |---|---|
 | Incremental STT | PASS — 32 utterances / 64 real prefix inferences |
-| Endpointing | PARTIAL — 40 trials per policy; patient policy still false-cut 11/40 |
-| Agent streaming | PASS — 20 prompts plus 12-turn continuity; system retained; memory PASS |
+| Endpointing | PASS — selected robust-1200ms policy: 40 trials, 0 false cuts, p95 decision 0.0418 ms; fast/patient tradeoff retained as comparison evidence |
+| Agent streaming | PASS — 20 prompts plus 15-turn continuity; system retained; memory PASS |
 | TTS streaming | PASS — sentence and phrase strategies, 8 runs each |
 | Pipelined E2E | PASS — 40 turns, 10 per category; p95 first playable 4,404.22 ms |
+| Sustained duplex | PASS — 50 consecutive turns, 5 interruptions, 3 recoveries, 0 dropped/duplicated events |
+| Physical barge-in | PASS — 10 input/output device trials; stop p95 63.57 ms, no stale resume |
 | Optimization | PASS — STT beam, LLM threads, and TTS chunking measured |
 | Language expansion | PARTIAL — 10 Egyptian + 10 mixed synthetic substitutes; natural data still blocked |
 | Barge-in | PASS — 30/30 across generation/TTS/sink; cancel p50/p95 0.01/0.02 ms; zero stale output |
