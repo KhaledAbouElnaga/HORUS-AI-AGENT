@@ -49,6 +49,10 @@ The preferred stack is a recommendation for the local harness only, not an appro
 
 Use bounded queues, cancellation propagation, idempotent event handling, reconnect/backoff, explicit session states, and a deterministic fallback transition. Metrics must include ingress-to-partial-STT, turn-final-to-first-token, response-to-first-audio, barge-in-stop, end-to-end turn, fallback rate, error rate, and dropped/late event counts.
 
+## Milestone 2 implementation
+
+`src/horus_local_voice` implements the event contract with replaceable `VAD`, `STT`, `AgentRuntime`, `TTS`, and `AudioIO` protocols. `VoiceHarness` is the deterministic vertical slice: it exercises final turns, cancellation, stale-event rejection, context, fail-closed tool decisions, fallback, and redacted metrics. It intentionally has no microphone, model, provider, or channel dependency.
+
 ## Sources
 
 [1] https://developers.facebook.com/docs/whatsapp/cloud-api/calling

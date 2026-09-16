@@ -12,6 +12,20 @@
 | M1-R6 | BLOCKED | Account entitlement, regional eligibility, approval, quotas, and live negotiated media behavior require Meta account access; no account action is authorized in this milestone |
 | M1-R7 | PASS | `ARCHITECTURE.md` decision matrix and `ACCEPTANCE_TESTS.md` local test matrix define measurable prototype validation before channel integration |
 
+## Milestone 2 evidence
+
+| ID | Result | Evidence |
+|---|---|---|
+| M2-01 | PASS | `tests/test_harness.py` — scripted turns, metrics, and fixture languages |
+| M2-02 | PASS | `test_barge_in_cancels_stale_tts_output` |
+| M2-03 | PASS | `test_context_survives_ten_turns` |
+| M2-04 | PASS | `test_duplicate_and_out_of_order_events_are_idempotent` |
+| M2-05 | PASS | `test_channel_failure_enters_fallback` |
+| M2-06 | PASS | `test_tool_calls_fail_closed_and_are_audited` |
+| M2-07 | PASS | `python -m compileall -q src tests` and secret scan |
+| M2-08 | NOT YET MEASURED | Real STT/TTS, microphone, and dialect quality; no model installed |
+| M2-09 | BLOCKED | Meta/WhatsApp integration intentionally deferred |
+
 ## Local prototype test matrix (implementation follows review)
 
 | ID | Test | Pass condition |
