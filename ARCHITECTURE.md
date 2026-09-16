@@ -36,6 +36,15 @@ Telemetry receives timestamps, state transitions, errors, and redacted IDs only.
 
 The preferred production branch is Meta's official WhatsApp Business Calling API, conditional on account eligibility, review, and verified live-media details.[1][5] A local audio harness is the first implementation boundary. A third-party bridge is not selected until terms, privacy, price, and technical contract are reviewed. Private WhatsApp protocol automation is rejected.
 
+## Local pipeline decision matrix
+
+| Choice | Latency | Arabic quality | Windows | Reversibility/cost | Decision |
+|---|---|---|---|---|---|
+| Silero VAD + whisper.cpp + local llama.cpp adapter + Piper | Low-to-moderate on CPU/GPU; streaming interfaces and cancellation are explicit | Whisper multilingual baseline plus locally evaluated Arabic voice; dialect quality is a test gate | Native Windows support for whisper.cpp; local components | No account/billing; adapters isolate model swaps; Piper code/voice licenses require review.[11][12][14][15] | **Preferred M2 prototype** |
+| WebRTC VAD + faster-whisper + local llama.cpp adapter + OS/local TTS | Potentially low VAD/STT latency; more Python/runtime overhead | Whisper baseline; OS voice may be weaker or unavailable for Egyptian Arabic | Windows viable; simpler Python experimentation | Free/local, but TTS portability and model downloads vary; easy to replace | Benchmark alternative |
+
+The preferred stack is a recommendation for the local harness only, not an approval to change existing HORUS routing or providers. Select the winner after the latency, Arabic/Egyptian scripted-set, interruption, and resource tests in the acceptance matrix.
+
 ## Reliability
 
 Use bounded queues, cancellation propagation, idempotent event handling, reconnect/backoff, explicit session states, and a deterministic fallback transition. Metrics must include ingress-to-partial-STT, turn-final-to-first-token, response-to-first-audio, barge-in-stop, end-to-end turn, fallback rate, error rate, and dropped/late event counts.

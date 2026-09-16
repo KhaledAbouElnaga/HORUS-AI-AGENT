@@ -1,11 +1,16 @@
 # Milestone 1 Acceptance Tests
 
-## Research/specification gates
+## Research/specification evidence
 
-- [ ] M1-R1: Research document distinguishes official, private/unsupported, third-party, and local-only paths.
-- [ ] M1-R2: Every externally sourced WhatsApp claim has a source URL and access date.
-- [ ] M1-R3: Account/region eligibility, approval, SIP/media, policy, and cost unknowns are listed as gates rather than guessed.
-- [ ] M1-R4: No Meta account, billing, credential, or existing HORUS runtime change occurred.
+| ID | Result | Evidence |
+|---|---|---|
+| M1-R1 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, Capability classification: official API, webhooks, SIP boundary, private protocol, third-party bridge, local prototype, fallback |
+| M1-R2 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, access date and Sources [1]–[15]; strict citation verification passed |
+| M1-R3 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, Official Calling media-path verification and Open research gates; eligibility, review, pricing, and live account contract are explicit gates |
+| M1-R4 | PASS | Git diff contains documentation only; no Meta account/billing/credential/runtime change; secret scan passed |
+| M1-R5 | PASS | `RESEARCH_WHATSAPP_VOICE.md`, Concrete local pipeline candidates and preferred Milestone-2 stack |
+| M1-R6 | BLOCKED | Account entitlement, regional eligibility, approval, quotas, and live negotiated media behavior require Meta account access; no account action is authorized in this milestone |
+| M1-R7 | PASS | `ARCHITECTURE.md` decision matrix and `ACCEPTANCE_TESTS.md` local test matrix define measurable prototype validation before channel integration |
 
 ## Local prototype test matrix (implementation follows review)
 
