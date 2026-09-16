@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+artifacts/audio/
+artifacts/voices/
+artifacts/tts/
+artifacts/*.json

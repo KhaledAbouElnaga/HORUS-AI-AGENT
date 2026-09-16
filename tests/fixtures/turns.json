@@ -1,0 +1,9 @@
+[
+  {"case":"egyptian_greeting","language":"ar-EG","text":"إزيك يا هورس؟"},
+  {"case":"egyptian_request","language":"ar-EG","text":"فكرني بميعاد الاجتماع"},
+  {"case":"msa_request","language":"ar","text":"ما حالة الطقس اليوم؟"},
+  {"case":"english_request","language":"en","text":"Summarize my last task"},
+  {"case":"mixed_turn","language":"ar/en","text":"ابعتلي quick summary"},
+  {"case":"interruption","language":"ar-EG","text":"استنى، غيرت رأيي"},
+  {"case":"context_10_turns","language":"ar-EG","text":"السياق محفوظ لعشر رسائل"}
+]

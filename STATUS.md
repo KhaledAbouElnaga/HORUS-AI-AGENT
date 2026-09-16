@@ -1,9 +1,9 @@
 # Status
 
-- **Current milestone:** Milestone 1 — realtime WhatsApp voice feasibility, specification, and test plan
-- **Last completed test:** ChatGPT PR review read completely; concrete local candidates and architecture matrix added; strict citation verification and tracked-secret scan passed.
-- **Blockers:** Meta account/region eligibility, permissions/App Review, quotas, live negotiated media behavior, and business-initiated pricing/payment requirements remain explicit HUMAN GATES; no account action or billing was activated.
-- **Next action:** Push this review revision to PR #4 and wait for ChatGPT's next GitHub review; do not implement product code or merge.
+- **Current milestone:** Milestone 2 — local realtime voice prototype slice
+- **Last completed test:** 20 real WAV end-to-end turns completed; 13 automated tests pass; compileall, secret scan, and diff checks pass.
+- **Blockers:** Hardware microphone/speaker smoke test was not run; real dialect quality is measured only on downloaded public fixtures; Meta/WhatsApp integration remains intentionally deferred.
+- **Next action:** Update PR #6 with real STT/TTS evidence and wait for ChatGPT review; do not merge.
 - **Human input actually required:** No action required now. Future Meta account approval, legal/terms acceptance, paid/billing activation, or production credentials are explicit human gates.
 
 No existing HORUS runtime system, provider, credential, routing, unrelated repository, or billing configuration was changed.
