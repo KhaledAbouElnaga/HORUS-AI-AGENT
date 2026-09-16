@@ -21,3 +21,19 @@ The searched `NightPrince/MasriSpeech` route was not consumable through the publ
 - Piper voices/engine: https://github.com/OHF-Voice/piper1-gpl (engine/voice licenses must be reviewed per redistribution)
 - TinyLlama model: https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0 (Apache-2.0 model card)
 - llama.cpp: https://github.com/ggml-org/llama.cpp (MIT)
+
+## Additional public-data attempts
+
+Yahya-Mohamed/egyptian-arabic-speech-dataset was inspected: it exposes precomputed input_features and token labels, not reusable raw speech/transcripts, and its card states no license. xtz999/egyptian_arabic_speech_zaid was inspected but its card also states no license. Neither was imported. The concatenated mixed fixture remains explicitly synthetic rather than natural code-switch speech.
+
+- Qwen 0.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+- Qwen 1.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+- Both repositories state Apache-2.0.
+
+## Additional public-data attempts
+
+Yahya-Mohamed/egyptian-arabic-speech-dataset was inspected: it exposes precomputed input features and token labels, not reusable raw speech and transcripts, and its card states no license. xtz999/egyptian_arabic_speech_zaid was inspected but its card also states no license. Neither was imported. The concatenated mixed fixture remains explicitly synthetic rather than natural code-switch speech.
+
+- Qwen 0.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+- Qwen 1.5B GGUF: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+- Both repositories state Apache-2.0.

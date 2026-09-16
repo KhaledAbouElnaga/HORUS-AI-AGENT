@@ -1,22 +1,30 @@
 # Milestone 3 Test Report
 
-**Scope:** real local voice quality/agent comparison on Windows; no Meta/WhatsApp, provider, credential, or billing changes.
+Scope: Issue #7 only. No Meta or WhatsApp, existing HORUS runtime/provider, credential, routing, billing, or paid-service changes.
 
-## Executed evidence
-
-| Requirement | Result | Evidence |
+| Requirement | Result | Executed evidence |
 |---|---|---|
-| 3 real STT configurations | PASS | `scripts/benchmark_stt_configs.py`; 3 configs × 3 repeats × 8 fixtures, 48 warm turns |
-| Alternative TTS | PASS | Piper `en_US-amy-low` generated `artifacts/tts/amy_low.wav`; Windows SAPI/pyttsx3 attempt timed out at 300 s and was not selected |
-| Real local/free LLM paths | PASS | TinyLlama and Qwen2.5 GGUF via llama.cpp executed; both measured, neither selected due output/tool/memory quality |
-| 30 real end-to-end turns | PASS | `scripts/run_real_pipeline.py`; 30 WAV → WebRTC VAD → STT → agent → Piper turns |
-| 20 barge-in runs | PASS | `scripts/benchmark_barge_in.py`; all 20 cancelled |
-| Improved Egyptian/mixed set | BLOCKED/PARTIAL | Public FLEURS Egyptian-labelled set downloaded; MasriSpeech dataset-server access returned 404/401; mixed fixture is concatenated, not natural code-switch speech |
-| Device access | INSPECTED / NOT MEASURED | `sounddevice.query_devices()` found microphone and speakers; no unattended recording/playback performed |
-| Failure/recovery | PASS | Config failure, float WAV, TTS allocation, corrupt/missing WAV, adapter timeout/error, missing LLM model, and SAPI timeout actively observed |
+| Three STT configurations | PASS | 72 measured transcriptions plus warm-ups on one 8-file set; exact WER, latency, and resource rows in local JSON |
+| Alternative TTS | PASS | Piper kareem-low and medium each synthesized seven phrases; low did not outperform baseline |
+| Real local/free LLM | PASS/PARTIAL | Qwen 0.5B and 1.5B ran locally; 1.5B passed turn-10 recall and 16/20 schema tool choices; four invalid choices failed closed |
+| 30 real E2E turns | PASS | Real WAV, VAD, STT, Qwen, and TTS pipeline completed 30 turns |
+| 20 barge-in runs | PASS | 20/20 software-stream cancellation; physical driver latency excluded |
+| Egyptian/mixed data | BLOCKED/PARTIAL | Current Egyptian-labelled set is read speech; natural code-switch fixture unavailable; public candidates lacked usable raw audio/transcripts or stated license |
+| Live devices | PASS for stream access | Input captured 250 ms and discarded; output played silence; no subjective microphone or speaker quality claim |
+| Failure/recovery | PASS/PARTIAL | Missing/corrupt audio, adapter timeout/error, missing model and invalid tool outputs executed; invalid tools fail closed |
+| Before/after | PASS | M2 comparison in M3_BENCHMARK.md |
 
-## Regression gates
+## Reproduction
 
-- `17 passed in 0.13s` before the M3 branch work; final run is rerun before delivery.
-- `python -m compileall -q src tests scripts`: required.
-- Secret scan and `git diff --check`: required.
+1. python scripts/download_fixtures.py
+2. PYTHONPATH=src python scripts/benchmark_m3_stt.py
+3. python scripts/benchmark_m3_tts.py
+4. python scripts/benchmark_m3_agent.py
+5. python scripts/benchmark_m3_agent_1_5b.py
+6. python scripts/benchmark_m3_tools.py
+7. PYTHONPATH=src python scripts/benchmark_m3_e2e.py
+8. PYTHONPATH=src python scripts/benchmark_barge_in.py
+9. PYTHONPATH=src python scripts/benchmark_vad.py
+10. python scripts/probe_audio_devices.py
+
+Model downloads are intentionally not committed. See requirements-m3-local.txt and model URLs in M3_EVALUATION_DATA.md.

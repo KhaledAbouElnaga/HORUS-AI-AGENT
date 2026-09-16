@@ -1,0 +1,6 @@
+faster-whisper==1.2.1
+piper-tts==1.8.0
+llama-cpp-python==0.3.35
+psutil==7.2.2
+sounddevice==0.5.5
+webrtcvad-wheels==2.0.14
