@@ -80,5 +80,5 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | M4-08 | PASS | 30/30 interruptions across generation/TTS/sink; zero stale output; cancel p95 0.02 ms |
 | M4-09 | PASS | 11 streaming failure/recovery paths actively injected and failed closed |
 | M4-10 | PASS | Streaming state/stale-event regression tests added; 28-test suite passes |
-| M4-11 | PASS | 10 microphone captures completed and immediately discarded; no ambient audio retained |
+| M4-11 | PASS | 10 live input/output device-level interruption trials completed; output-stop p95 63.57 ms, no stale resume, and no ambient audio retained |
 | M4-12 | PASS | Required M4 docs and exact raw artifact paths recorded; no provider/billing/credential changes |

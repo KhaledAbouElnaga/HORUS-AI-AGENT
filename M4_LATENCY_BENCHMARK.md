@@ -5,7 +5,7 @@ All runs were CPU-only on the same Windows host. Raw rows are in ignored `artifa
 ## Streaming components
 
 - Incremental STT: 32 utterances, 64 real prefix inferences. First partial availability p50/p95 5,509.37/9,040.10 ms (includes reaching the 50% audio prefix); finalization compute p50/p95 1,229.04/1,594.05 ms; mean WER 0.3109; 32 partial revisions.
-- Streamed Qwen: 20 prompts. First token p50/p95 99.38/114.92 ms; first phrase 381.03/567.10 ms; total 608.88/1,176.61 ms; throughput 31.51/34.85 tokens/s. A 12-turn bounded scenario retained the system instruction and recalled pinned value `7319` at turn 12.
+- Streamed Qwen: 20 prompts. First token p50/p95 99.38/114.92 ms; first phrase 381.03/567.10 ms; total 608.88/1,176.61 ms; throughput 31.51/34.85 tokens/s. A 15-turn bounded scenario retained the system instruction and recalled pinned value `7319` at turn 15.
 - Piper chunking: 8 runs per strategy. Sentence first playable p50/p95 554.16/723.59 ms, RTF p50/p95 0.11/0.31. Phrase first playable 575.77/714.04 ms, RTF 0.11/0.17. Phrase has the better measured worst-case RTF but not the better p50 first audio.
 
 ## True pipelined E2E, 40 turns
@@ -28,6 +28,10 @@ The benchmark starts chunk synthesis as soon as streamed model text reaches punc
 | Mixed synthetic | 10 | 0.8125 | 1,506.30 / 3,931.90 ms |
 
 M3 aggregate E2E p95 was 4,146.59 ms. M4 first-playable p95 is 4,404.22 ms and total p95 is 4,427.31 ms, so this implementation did **not** beat M3 aggregate latency. It adds real incremental results and early agent-to-TTS overlap, but long rolling context and prefix inference offset that gain.
+
+## Repeated streaming STT candidates
+
+After warm-up, two configurations each processed the same 20-turn Arabic/English/mixed set. Rolling 50% beam-1 measured partial/final p95 4,391.71/2,824.28 ms and mean WER 0.5231. Windowed 75% beam-5 measured 3,852.81/3,921.80 ms and mean WER 0.4432. Beam-1 remains selected for partial latency while beam-5 protects final quality. Full rows are in ignored `artifacts/m4_stt_candidates_checkpoint.json`.
 
 ## Three optimization experiments
 

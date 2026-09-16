@@ -1,34 +1,37 @@
 # M4 Failure and Recovery
 
-## Executed failures
+## Focused required injections
 
-The primary benchmark actively injected 11 cases and failed closed in all 11:
+`PYTHONPATH=src python scripts/benchmark_m4_failure_recovery.py` actively executed nine deterministic failure/recovery cases; **9/9 passed**.
 
-1. STT worker exception
-2. stalled partial stream timeout
-3. VAD false endpoint
-4. LLM cancellation
-5. TTS chunk failure
-6. audio queue backpressure
-7. duplicate chunk
-8. out-of-order chunk
-9. missing voice
-10. oversized context truncation
-11. low-memory safeguard
+| Case | Recovery result |
+|---|---|
+| Microphone/input loss | injected `OSError` caught; input session returned to listening |
+| Output-device open failure | injected `OSError` caught; text-only fallback selected |
+| STT worker exception | worker recovered and listening continued |
+| STT timeout | bounded deadline recovered without stale output |
+| Agent timeout | agent worker recovered |
+| Agent cancellation | epoch advanced and stale generation was rejected |
+| TTS failure | TTS worker recovered |
+| Queue overload/backpressure | 2 accepted, 3 explicitly dropped, high-water 2 |
+| Session restart/reconnect | stopped ingress restarted and accepted a new frame |
 
-The sustained session additionally recovered the STT, agent, and TTS components at turns 12, 28, and 44 and then continued to turn 50 without duplicate turns or stale output. A 50-frame overload trial proved the 8-frame queue drops excess input explicitly and drains cleanly.
+Raw output: ignored `artifacts/m4_failure_recovery_results.json`.
 
-## Security/isolation
+## Additional executed evidence
+
+The primary streaming benchmark separately injected 11 fail-closed cases: STT exception, stalled partial timeout, VAD false endpoint, LLM cancellation, TTS chunk failure, queue overflow, duplicate chunk, out-of-order chunk, missing voice, oversized context, and low-memory protection. The sustained session recovered STT, agent, and TTS at turns 12, 28, and 44 and continued through turn 50. A 50-frame overload trial accepted 8 into an 8-frame queue, explicitly dropped 42, drained all accepted frames, and ended at depth zero.
+
+## Security and isolation
 
 - Tool-like intents: 5/5 denied; no tool side effect occurred.
-- No credentials or paid endpoints were introduced.
-- No Meta/WhatsApp, provider, routing, billing, or unrelated runtime configuration changed.
-- Ambient microphone samples from 10 capture and 10 live barge-in trials were discarded and never written to disk.
-- Cancellation epochs and event sequence ledgers reject stale or duplicated output.
+- No credentials, paid endpoints, Meta/WhatsApp, provider routing, billing, or unrelated runtime configuration changed.
+- Ambient microphone samples were discarded and never written.
+- Cancellation epochs and sequence ledgers reject stale or duplicate output.
 
 ## Remaining limits
 
-- Natural licensed Egyptian/code-switch conversational data is still BLOCKED; controlled substitutes remain clearly labelled.
-- Selected endpoint correctness requires a 1200 ms tail, above the 900 ms target.
-- Sustained late-session first-token p95 regressed to 4459.37 ms.
-- Subjective audible output quality is NOT MEASURED.
+- Natural licensed Egyptian/code-switch conversational data remains BLOCKED; controlled substitutes are labelled.
+- The selected endpoint policy needs a 1,200 ms tail, above the 900 ms target.
+- Sustained RSS grew 62.07 MB; first-token p95 changed from 4,428.85 ms in turns 1-10 to 2,078.88 ms in turns 41-50, with no queue growth, dropped events, or duplicates.
+- Acoustic loudspeaker stop timing and subjective quality are NOT MEASURED.

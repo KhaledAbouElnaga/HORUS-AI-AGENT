@@ -2,7 +2,7 @@
 
 ## 50-turn session
 
-The local loop completed 50 consecutive turns across Arabic/Egyptian-labelled, MSA, English, and mixed fixtures. It included 5 interruptions, 3 recoverable component restarts, and context recall from the pinned early-session fact through the final turn.
+The local loop completed 50 consecutive turns using previously measured real STT candidate rows, a live local Qwen stream per turn, and live Piper synthesis per turn across Arabic/Egyptian-labelled, MSA, English, and mixed fixtures. It included 5 interruptions, 3 recoverable component restarts, and context recall from the pinned early-session fact through the final turn.
 
 | Metric | Result |
 |---|---:|
@@ -16,10 +16,10 @@ The local loop completed 50 consecutive turns across Arabic/Egyptian-labelled, M
 | Queue high-water | 0 |
 | Agent first-token p95, turns 1–10 / 41–50 | 4428.85 / 2078.88 ms |
 
-The local Qwen runtime produced a Windows access-violation during an earlier long run at turn 20. The final harness catches worker exceptions, emits a safe non-tool fallback, records the recovery, and preserves the session instead of treating the failed model turn as a successful model response.
+An earlier long-run attempt ended with a Windows access violation in the local Qwen runtime at turn 20. That failed attempt was not counted as completion. The final harness catches worker exceptions, emits a safe non-tool fallback, records the recovery, and preserves the session instead of treating the failed model turn as a successful model response.
 
 ## Quality boundary
 
-This is a reproducible local streamed session, not a production call-quality or natural-conversation claim. Synthetic Egyptian and code-switch fixtures are documented separately. No raw audio was retained.
+This is a reproducible local sustained agent/TTS session with replayed measured STT results, not a claim that 50 fresh microphone utterances were transcribed or that production call quality was established. Synthetic Egyptian and code-switch fixtures are documented separately. No raw audio was retained.
 
 Raw rows: `artifacts/m4_completion_results.json` -> `sustained.rows`.
