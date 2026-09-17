@@ -8,6 +8,9 @@ The repository and local environment were inspected for Meta/WhatsApp tokens, WA
 |---|---|---|
 | WABA and phone-number readiness | **NOT MEASURED** | No account surface or identifiers available |
 | Calling feature enabled | **PASS — user-reported on Meta test WhatsApp number** | Live API/account verification remains NOT MEASURED; no setting was changed by this repository |
+| Public callback ingress | **PASS — reversible probe** | `https://cold-jokes-make.loca.lt/webhooks/whatsapp/calling`; local server and tunnel are temporary and not production |
+| Callback verification | **PASS — external GET** | Challenge returned HTTP 200; verify token never printed |
+| Signature rejection | **PASS — external POST** | Invalid `X-Hub-Signature-256` returned HTTP 403; App Secret never printed |
 | Required permissions | **NOT MEASURED** | No Meta app/token inspection performed |
 | Calls webhook readiness | **NOT MEASURED** | No authorized callback configuration available |
 | SIP/media/WebRTC configuration | **NOT MEASURED** | No SIP endpoint or account negotiation available |
