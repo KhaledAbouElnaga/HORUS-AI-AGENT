@@ -33,5 +33,5 @@ The primary streaming benchmark separately injected 11 fail-closed cases: STT ex
 
 - Natural licensed Egyptian/code-switch conversational data remains BLOCKED; controlled substitutes are labelled.
 - The selected endpoint policy (patient-600ms, 11/40 false cuts) uses a 600 ms end-silence window.
-- Sustained RSS grew 62.07 MB; first-token p95 changed from 4,428.85 ms in turns 1-10 to 2,078.88 ms in turns 41-50, with no queue growth, dropped events, or duplicates.
+- Sustained RSS grew 451.69 MB (1,688.88→2,140.57 MB); agent first-token p95 changed from 1,332.59 ms in turns 1-10 to 1,402.96 ms in turns 41-50, with no queue growth, dropped events, or duplicates.
 - Physical output stream-stop timing was measured (p95 230.4233 ms); acoustic echo cancellation, human speech-detection quality, and subjective loudspeaker/audio quality remain NOT MEASURED.
