@@ -27,3 +27,6 @@
 - Keep a persistent event loop for aiortc peer connections; `asyncio.run()` per SDP operation closes the loop and breaks the live RTP/ICE lifecycle.
 - Accumulate live RTP audio with WebRTC VAD and endpoint on consecutive silence; fixed short Whisper windows can be discarded by VAD and destabilize language detection.
 - Treat live accept as a transaction: mark the normalized event only provisionally, roll back `RINGING` and its event marker on SDP/Graph failure, and let Meta retry the same connect instead of misclassifying it as a permanent duplicate.
+- OpenCode Free rejects direct Zen HTTP callers with `FreeTierError`; use Hermes' local `hermes_cli.oneshot._run_agent` path, which supplies the in-process OpenCode identity and keyless routing.
+- When a voice worker handles an LLM failure, record a redacted stage error and continue consuming the queue; provider failure must not terminate the worker thread.
+- Track aiortc remote-track tasks, cancel and gather them before `RTCPeerConnection.close()`, retrieve task exceptions, stop the loop, and join the loop thread to prevent closed-loop warnings.

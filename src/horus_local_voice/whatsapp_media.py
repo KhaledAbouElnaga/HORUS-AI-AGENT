@@ -218,12 +218,21 @@ class DuplexVoiceBridge:
         if self._worker:
             self._worker.start()
 
+    def _record_processing_error(self, exc: Exception) -> None:
+        try:
+            self.stage_logger("turn_error", {"error_type": type(exc).__name__})
+        except Exception:  # noqa: BLE001 - observability must not kill the worker
+            pass
+
     def _worker_loop(self) -> None:
         while True:
             item = self.input_queue.get()
             if item is None:
                 return
-            self._emit(*item)
+            try:
+                self._emit(*item)
+            except Exception as exc:  # noqa: BLE001 - keep the call worker alive
+                self._record_processing_error(exc)
 
     def _emit(self, pcm: bytes, sample_rate: int) -> None:
         if self._closed:
@@ -406,9 +415,11 @@ class LiveCallingCoordinator:
         result = self.adapter.ingest(envelope)
         sid = result.get("session_id")
         endpoint = self.endpoints.pop(sid, None)
-        self._workers.pop(sid, None)
+        worker = self._workers.pop(sid, None)
         if endpoint is not None:
             endpoint.close()
+        if worker is not None and worker is not threading.current_thread():
+            worker.join(timeout=5)
         self.voice.flush()
         self.voice.close()
         self.stage_logger("teardown_complete", {})
@@ -459,6 +470,10 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
             self.loop = asyncio.new_event_loop()
             self.ready = threading.Event()
             self.listeners: list[Callable[[bytes, int], None]] = []
+            self._track_tasks: set[asyncio.Task] = set()
+            self._closed = False
+            self.pc = None
+            self.out = None
             self.thread = threading.Thread(target=self._run, daemon=True)
             self.thread.start()
             if not self.ready.wait(10):
@@ -466,20 +481,37 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
 
         def _run(self):
             asyncio.set_event_loop(self.loop)
-            self.pc = RTCPeerConnection()
-            self.out = OutputTrack()
-            self.pc.addTrack(self.out)
-            self._bind_track()
-            self.ready.set()
-            self.loop.run_forever()
+            try:
+                self.pc = RTCPeerConnection()
+                self.out = OutputTrack()
+                self.pc.addTrack(self.out)
+                self._bind_track()
+                self.ready.set()
+                self.loop.run_forever()
+            finally:
+                if not self.ready.is_set():
+                    self.ready.set()
+                if not self.loop.is_closed():
+                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                    self.loop.close()
 
         def _bind_track(self):
             @self.pc.on("track")
             def on_track(track):
                 if track.kind != "audio":
                     return
-                import asyncio
-                asyncio.create_task(consume_remote_audio_track(track, self.listeners))
+                task = self.loop.create_task(consume_remote_audio_track(track, self.listeners))
+                self._track_tasks.add(task)
+                task.add_done_callback(self._track_tasks.discard)
+                task.add_done_callback(self._consume_track_result)
+
+        @staticmethod
+        def _consume_track_result(task):
+            if task.cancelled():
+                return
+            # Retrieving the exception prevents "Task exception was never retrieved"
+            # during remote-track failures; the call worker records its own stages.
+            task.exception()
 
         def answer(self, offer_sdp: str) -> str:
             async def negotiate():
@@ -492,9 +524,22 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
         def add_pcm_listener(self, listener): self.listeners.append(listener)
         def queue_pcm(self, pcm, sample_rate=48_000): self.out.frames.put_nowait((pcm, sample_rate))
         def close(self):
-            future = asyncio.run_coroutine_threadsafe(self.pc.close(), self.loop)
-            future.result(10)
-            self.loop.call_soon_threadsafe(self.loop.stop)
-            self.thread.join(timeout=10)
+            if self._closed:
+                return
+            self._closed = True
+
+            async def shutdown():
+                for task in tuple(self._track_tasks):
+                    task.cancel()
+                if self._track_tasks:
+                    await asyncio.gather(*self._track_tasks, return_exceptions=True)
+                if self.pc is not None:
+                    await self.pc.close()
+
+            if self.thread.is_alive():
+                future = asyncio.run_coroutine_threadsafe(shutdown(), self.loop)
+                future.result(10)
+                self.loop.call_soon_threadsafe(self.loop.stop)
+                self.thread.join(timeout=10)
 
     return Endpoint()

@@ -29,8 +29,11 @@ class LocalHorusPythonPort:
         if str(self.root) not in sys.path:
             sys.path.insert(0, str(self.root))
         from app.core import agent, voice_state  # noqa: PLC0415
+        from app.adapters.llm import router as llm_router  # noqa: PLC0415
         from app.adapters.memory import store  # noqa: PLC0415
         from app.tasks import engine  # noqa: PLC0415
+        from .free_provider import install_free_provider  # noqa: PLC0415
+        self.free_provider = install_free_provider(llm_router)
         self.agent, self.voice_state = agent, voice_state
         self.memory, self.tasks = store, engine
         self._cancelled: set[str] = set()
@@ -49,6 +52,7 @@ class LocalHorusPythonPort:
         if memory_reply is not None:
             reply, model, cost = memory_reply, "local-memory", 0.0
         else:
+            self.free_provider.bind_session(session_id)
             reply, model, cost = asyncio.run(self.agent.handle_text(normalized, context=context))
         context.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
         # The real app returns one completed response; these are transport chunks,
@@ -107,5 +111,6 @@ class LocalHorusPythonPort:
         self._cancelled.add(session_id)
 
     def close(self, session_id: str) -> None:
+        self.free_provider.close_session(session_id)
         self._contexts.pop(session_id, None)
         self._cancelled.discard(session_id)

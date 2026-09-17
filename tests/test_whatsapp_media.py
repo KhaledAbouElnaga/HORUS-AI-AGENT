@@ -5,7 +5,7 @@ from aiortc.mediastreams import MediaStreamError
 from horus_local_voice.whatsapp_calling import WhatsAppCallingAdapter
 from horus_local_voice.whatsapp_media import (
     CallAction, DuplexVoiceBridge, LiveCallingCoordinator, MetaCallingClient,
-    PipelineVoiceTurnProcessor,
+    PipelineVoiceTurnProcessor, aiortc_endpoint_factory,
 )
 
 
@@ -137,7 +137,6 @@ def test_runnable_entrypoint_installs_live_media_handler(monkeypatch):
 
 
 
-
 def test_vad_accumulates_until_silence_boundary():
     from horus_local_voice.whatsapp_media import VadEndpointAccumulator
     vad = VadEndpointAccumulator(end_silence_ms=60)
@@ -180,6 +179,35 @@ def test_hangup_during_processing_discards_stale_output():
     assert bridge.next_output(timeout=0.3) is None
 
 
+def test_duplex_bridge_worker_survives_provider_failure_and_processes_next_turn():
+    import time
+
+    events = []
+
+    class Flaky:
+        def __init__(self):
+            self.calls = 0
+
+        def process_utterance(self, pcm, rate):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("all Hermes OpenCode Free models failed")
+            return [b"recovered"]
+
+    bridge = DuplexVoiceBridge(Flaky(), background_processing=True, stage_logger=lambda s, m: events.append((s, m)))
+    bridge.on_pcm(b"first", 48_000)
+    time.sleep(0.05)
+    bridge.on_pcm(b"second", 48_000)
+    deadline = time.time() + 1
+    item = None
+    while time.time() < deadline and item is None:
+        item = bridge.next_output(timeout=0.05)
+    assert item == (b"recovered", 48_000)
+    assert any(stage == "turn_error" for stage, _ in events)
+    assert bridge._worker is not None and bridge._worker.is_alive()
+    bridge.close()
+
+
 def test_duplex_bridge_is_bounded_and_closes_output():
     processor = Processor(); bridge = DuplexVoiceBridge(processor, max_output_chunks=1)
     bridge.on_pcm(b"a", 48000)
@@ -188,3 +216,27 @@ def test_duplex_bridge_is_bounded_and_closes_output():
     assert bridge.dropped_output == 1
     bridge.close()
     assert bridge.next_output(timeout=0) is None
+
+
+def test_duplex_bridge_worker_stays_alive_after_provider_failure():
+    import time
+
+    events = []
+
+    class Broken:
+        def process_utterance(self, pcm, rate):
+            raise RuntimeError("provider failure")
+
+    bridge = DuplexVoiceBridge(Broken(), background_processing=True, stage_logger=lambda s, m: events.append((s, m)))
+    bridge.on_pcm(b"input", 48_000)
+    time.sleep(0.05)
+    assert bridge._worker is not None and bridge._worker.is_alive()
+    assert any(stage == "turn_error" for stage, _ in events)
+    bridge.close()
+
+
+def test_aiortc_endpoint_close_is_idempotent():
+    endpoint = aiortc_endpoint_factory()
+    endpoint.close()
+    endpoint.close()
+    assert not endpoint.thread.is_alive()

@@ -57,3 +57,17 @@ def test_runtime_transport_chunks_preserve_response_whitespace(local_runtime):
     import asyncio
     expected, _model, _cost = asyncio.run(port.agent.handle_text("/status"))
     assert "".join(adapter.stream_turn(sid, "/status")) == expected
+
+
+def test_stt_to_horus_free_provider_to_response(local_runtime):
+    adapter, port, sid = local_runtime
+    calls = []
+
+    def runner(prompt, **kwargs):
+        calls.append(kwargs)
+        return "HORUS voice response", {"session_id": "hermes-voice-session"}
+
+    port.free_provider._runner = runner
+    assert "HORUS voice response" == "".join(adapter.stream_turn(sid, "transcribed speech"))
+    assert calls[0]["provider"] == "opencode-free"
+    assert calls[0]["model"] == "nemotron-3-ultra-free"
