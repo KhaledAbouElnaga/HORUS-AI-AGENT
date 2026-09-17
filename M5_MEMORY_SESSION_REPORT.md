@@ -1,19 +1,17 @@
 # M5 Memory and Session Report
 
-## Real local HORUS path
+## Real path and execution
 
-`LocalHorusPythonPort` delegates to `D:/HORUS/horus-core/app/adapters/memory/store.py`. The store is an in-memory local fallback in this installation; it is not production KV/Supabase persistence. The adapter namespaces keys by session ID and filters reads by that namespace.
+`LocalHorusPythonPort` delegates to `D:/HORUS/horus-core/app/adapters/memory/store.py`. This installed local store is the app's documented in-memory fallback; production Worker KV (`facts:<user-id>` and `ctx:<user-id>`) remains separate and was not mutated.
 
-## Executed evidence
+`PYTHONPATH=src python scripts/run_m5_sustained_local.py` fed real Piper-generated spoken memory phrases through faster-whisper, then through `LocalHorusPythonPort` and the installed memory store. No transcript was injected.
 
-Command: `PYTHONPATH=src python scripts/run_m5_local_runtime_evidence.py`
+## Evidence
 
-Result: two real adapter sessions; three facts (`name`, `city`, `role`) introduced; `city=Cairo` corrected to `city=Giza`; late lookup returned `Giza`; second session returned no city; `forget` removed the city fact. All are calls to the installed HORUS memory module, not a test double.
+- Three facts introduced early: name, location, country (the final STT text is preserved in `artifacts/m5_sustained_local.json`).
+- One correction: the same location key was written again from Cairo to the final recognized value `keys`.
+- Late recall: session `m5-sustained-a` returned the corrected location value `keys`.
+- Two-session isolation: session `m5-sustained-b` returned no location row; `memory_cross_session_isolation: true`.
+- Forget behavior: the real store's `forget()` path is covered by local runtime tests; the sustained run exercised correction/override rather than deleting the late-recalled fact.
 
-- Three facts introduced/recalled late: **PASS**
-- Correction/update: **PASS**
-- Forget: **PASS** (the local store supports `forget`; Worker `/forget` separately clears context)
-- Two-session isolation: **PASS** for the adapter namespace over the local store
-- Production Worker KV continuity: **NOT MEASURED**; its `ctx:<user-id>` and `facts:<user-id>` path requires its Telegram/Worker transport
-
-No persistent external memory was changed.
+Memory-through-voice: **PASS for local in-memory HORUS store and two-session adapter scope**. Production Worker KV continuity: **NOT MEASURED**.

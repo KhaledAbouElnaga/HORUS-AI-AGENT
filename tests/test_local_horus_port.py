@@ -39,7 +39,21 @@ def test_real_local_horus_safe_tool_categories_and_mutation_deny(local_runtime):
         adapter.call_tool(sid, "delete", {})
 
 
+def test_real_local_horus_memory_intent_runs_through_voice_turn(local_runtime):
+    adapter, _port, sid = local_runtime
+    list(adapter.stream_turn(sid, "remember the location is Cairo"))
+    list(adapter.stream_turn(sid, "remember the location is Giza"))
+    assert "Giza" in "".join(adapter.stream_turn(sid, "what is my location"))
+
+
 def test_real_local_horus_command_turn_uses_agent_loop(local_runtime):
     adapter, port, sid = local_runtime
     assert port.native_streaming is False
-    assert "شغال" in " ".join(adapter.stream_turn(sid, "/status"))
+    assert "شغال" in "".join(adapter.stream_turn(sid, "/status"))
+
+
+def test_runtime_transport_chunks_preserve_response_whitespace(local_runtime):
+    adapter, port, sid = local_runtime
+    import asyncio
+    expected, _model, _cost = asyncio.run(port.agent.handle_text("/status"))
+    assert "".join(adapter.stream_turn(sid, "/status")) == expected

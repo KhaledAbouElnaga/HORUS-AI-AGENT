@@ -1,32 +1,26 @@
 # M5 Runtime Integration
 
-## Exhaustive discovery
+## Discovery evidence
 
-Inspected:
+Inspected the complete local HORUS installation under `D:/HORUS`, including `D:/HORUS/horus-core/app`, `worker`, `docs`, `scripts`, `backups`, and Worker config. Searched source/configs for gateway/server/listen/serve/localhost/127.0.0.1/WebSocket/RPC/API/runtime/session/agent/Telegram/polling/port.
 
-- `D:/HORUS/horus-core/app/main.py`, `app/core/agent.py`, `app/adapters/memory/store.py`, `app/adapters/llm/router.py`, `app/tasks/engine.py`, and `app/core/config.py`.
-- `D:/HORUS/horus-core/worker/src/index.js` and `worker/wrangler.toml`.
-- `D:/HORUS` runtime/config/backup folders and `C:/Users/khale/Documents/Absher-Bot` for gateway, server, listen, localhost, WebSocket, RPC, API, runtime, session, agent, Telegram, polling, and port references.
-- Running-process candidates and all TCP listening ports; no identifiable HORUS gateway process was mapped by `tasklist`. Port `8787` was created by the local Wrangler Worker during this pass.
+Actual callable paths found:
 
-## Actual callable paths
+- Python FastAPI app: `D:/HORUS/horus-core/app/main.py` (`app.main:app`) with `/health`, `/cost`, and Telegram webhook routes.
+- Python core: `app.core.agent.handle_text`, `app.adapters.memory.store`, and `app.tasks.engine`.
+- Cloudflare Worker: `worker/src/index.js`, locally run with the repository's normal `wrangler dev --local --port 8787` command. Local `/health` and `/cost` returned HTTP 200; the binding reported paid mode off and Workers AI ready. The Worker has no native local voice/session stream API and its turn route is Telegram-only.
+- No HORUS process was already active before the probe. Wrangler temporarily listened on `127.0.0.1:8787` and was stopped after verification. No persistent HORUS gateway, IPC, WebSocket, RPC, polling, or other local listener was found.
 
-The local Python HORUS application is callable in-process from `D:/HORUS/horus-core/app`:
+## Implementation
 
-- `app.main:app` exposes real FastAPI `/health`, `/cost`, and `POST /webhook/telegram` entrypoints.
-- `app.core.agent.handle_text(text, context)` is the real agent loop.
-- `app.adapters.memory.store` is the real local memory store (`remember`, `recall`, `forget`).
-- `app.tasks.engine` is the real task state path.
-- `app.adapters.llm.router` is the real provider router, but this environment has no configured provider key and paid mode is off.
+`LocalHorusPythonPort` delegates to the installed Python HORUS agent, memory store, and task engine. `VoiceRuntimeAdapter` owns session identity and fail-closed mutation policy. Spoken aliases are normalized only to the existing `/status`, `/tasks`, and `/cost` commands. Memory utterances are routed to the installed memory store; no result is fabricated.
 
-`LocalHorusPythonPort` calls those modules directly; it does not reimplement them. The local runtime returns a completed response, not native token deltas, so word chunks are explicitly marked transport chunks and not streaming evidence.
-
-The exact Worker also runs through its normal local tooling: `wrangler dev --local --port 8787 --show-interactive-dev-session=false`. Real local-dev checks returned `/health` HTTP 200 with Workers AI ready and `/cost` HTTP 200 with paid mode off. This is local Worker execution, not deployed execution. The Worker still exposes Telegram-only turn ingress/egress and no local session-stream API.
+The M4 WAV coordinator performs real PCM -> chunk-fed faster-whisper -> local HORUS -> Piper emission. The local HORUS Python agent returns complete responses, so the transport preserves separators but records native first-token timing as NOT MEASURED and records `runtime_response_ready_ms` separately.
 
 ## Result
 
-- Local real HORUS core adapter: **PASS** for callable agent commands, memory, task/status/cost paths.
-- WAV -> chunk-fed STT -> runtime -> incremental TTS coordinator: **PASS** at the transport boundary; arbitrary LLM turns remain provider-dependent.
-- Native streamed HORUS output/cancellation: **PARTIAL**; the Python core has no streaming API and cancellation is not interruptible during its synchronous `handle_text` call.
-- Real end-to-end microphone/WAV voice with native HORUS streaming: **BLOCKED**.
+- Local Python HORUS callable path: **PASS**.
+- Local Worker normal dev execution: **PASS for `/health` and `/cost` only**.
+- Real WAV/STT/HORUS/memory/tool/TTS integrated run: **PASS for the supported command/memory path**, with native token streaming **PARTIAL**.
+- Deployed Worker Telegram transport: **BLOCKED** for this voice harness; no credential or Telegram message was used.
 - No provider, credential, billing, Meta/WhatsApp, deployment, or unrelated-system changes were made.

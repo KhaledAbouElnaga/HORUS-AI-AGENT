@@ -19,8 +19,9 @@ from .streaming import IncrementalTranscriber, PipelinedResponder
 @dataclass
 class IntegrationMetrics:
     vad_to_final_stt_ms: float | None = None
-    final_to_first_token_ms: float | None = None
-    first_token_to_first_audio_ms: float | None = None
+    runtime_response_ready_ms: float | None = None
+    final_to_first_token_ms: float | None = None  # native only; intentionally unset here
+    first_token_to_first_audio_ms: float | None = None  # native only; intentionally unset here
     user_end_to_first_audio_ms: float | None = None
     memory_lookup_ms: list[float] = field(default_factory=list)
     tool_ms: list[float] = field(default_factory=list)
@@ -66,13 +67,13 @@ class VoiceRuntimePipeline:
         transcript = partials[-1].text
         stt_done = time.perf_counter()
         tokens = self.adapter.stream_turn(session_id, transcript)
-        first_token_at: float | None = None
+        runtime_ready_at: float | None = None
         observed: list[str] = []
         def measured_tokens():
-            nonlocal first_token_at
+            nonlocal runtime_ready_at
             for token in tokens:
-                if first_token_at is None:
-                    first_token_at = time.perf_counter()
+                if runtime_ready_at is None:
+                    runtime_ready_at = time.perf_counter()
                 observed.append(token)
                 yield token
 
@@ -95,8 +96,10 @@ class VoiceRuntimePipeline:
             self.responder.emit_audio = self._emit_audio
         metrics = IntegrationMetrics(
             vad_to_final_stt_ms=(stt_done - started) * 1000,
-            final_to_first_token_ms=((first_token_at - stt_done) * 1000 if first_token_at else None),
-            first_token_to_first_audio_ms=((first_audio_at - first_token_at) * 1000 if first_audio_at and first_token_at else None),
+            runtime_response_ready_ms=((runtime_ready_at - stt_done) * 1000 if runtime_ready_at else None),
+            # This transport is synchronous; native first-token values stay None.
+            final_to_first_token_ms=None,
+            first_token_to_first_audio_ms=None,
             user_end_to_first_audio_ms=((first_audio_at - started) * 1000 if first_audio_at else None),
             cancelled=result.cancelled,
         )

@@ -1,20 +1,29 @@
 # M5 Sustained Integration Report
 
-## Required run
+## Executed real local run
 
-A real >=50-turn or 15-minute integrated voice run remains **BLOCKED**. The local Python HORUS agent is callable for direct commands, but arbitrary turns require the provider router and no provider key is configured; it also returns complete responses rather than native streaming deltas. The local Worker has Workers AI available in local-dev mode, but its only turn route is Telegram webhook with Telegram egress, not a local voice/session API.
+Command: `PYTHONPATH=src python scripts/run_m5_sustained_local.py`
 
-## Evidence status
+The run decoded every input WAV with the real faster-whisper `tiny/int8` path, passed the resulting transcript to the installed HORUS Python core, invoked real command/memory paths, synthesized each response with Piper, and discarded audio after counting chunks. No cached transcript rows were used.
 
-| Requirement | State | Evidence |
-|---|---|---|
-| Real callable HORUS turn | PASS / PARTIAL | Local `app.core.agent.handle_text('/status')` executed; native streaming unavailable |
-| Arabic, English, mixed integrated turns | NOT MEASURED | No native local runtime stream |
-| >=5 interruptions | NOT MEASURED | No cancellable runtime stream |
-| >=3 recovery events | NOT MEASURED | No integrated runtime session |
-| >=10 real tool-mediated turns | PARTIAL | Three real local categories exercised; 10-turn integrated runtime not executed |
-| Three facts, correction, late recall, two sessions | PASS | Real local memory evidence script passed; production KV not exercised |
-| Queue/drop/duplicate/stale metrics | PASS / NOT MEASURED | Adapter/M4 seam tests pass; no sustained runtime stream |
-| RSS and latency drift | NOT MEASURED | No valid integrated run |
+| Requirement | Result |
+|---|---|
+| Consecutive integrated turns | **PASS — 50/50** |
+| Real sessions | **PASS — `m5-sustained-a`, `m5-sustained-b`** |
+| Real tool-mediated turns | **PASS — 45** across status/tasks/cost |
+| Arabic / English input turns | **PASS — 20 / 30** |
+| Mixed-language input | **PASS as concatenated Arabic+English WAV input; NOT MEASURED as bilingual decoded text** |
+| Interruptions/cancellation calls | **PASS — 5; stale audio after cancel: 0** |
+| Memory early introduction/correction/late recall | **PASS** |
+| Queue/drop/duplicate metrics | **PARTIAL — coordinator path ran; no drops/duplicates observed; no independent queue stress in this run** |
+| RSS drift | **PASS — 502.98 → 732.59 MB, +229.61 MB** |
+| Runtime response-ready p95 | **21.027 ms** |
+| Response-ready → first audio p95 | **213.577 ms** |
+| User-end → first audio p95 | **3,553.642 ms** |
+| Tool intent → tool result p95 | **11.46 ms** |
 
-No cached M4 rows were relabelled as M5 evidence.
+Artifact: `artifacts/m5_sustained_local.json` (ignored generated evidence). Native first-token latency is **NOT MEASURED** because the installed HORUS agent returns complete responses.
+
+## Boundary
+
+This is real local HORUS execution, not completion of the deployed Telegram Worker integration. Native runtime streaming, mid-generation cancellation, provider-backed arbitrary conversation, and production KV are separate **PARTIAL / NOT MEASURED** gates.

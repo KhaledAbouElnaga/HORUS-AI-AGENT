@@ -1,19 +1,21 @@
 # M5 Failure and Recovery Report
 
-## Injection matrix
+## Executed local matrix
 
-| Injection | State | Result |
+| Injection | State | Evidence |
 |---|---|---|
-| runtime unavailable | PASS | `UnconfiguredRuntime` raises `RuntimeUnavailable` |
-| memory read failure | PASS at adapter contract | transport exception is propagated; no fabricated memory |
-| memory write/update failure | PASS at adapter contract | transport exception is propagated; no fabricated write |
-| tool timeout / exception / malformed result | PASS at adapter contract | fail-closed safety boundary remains in force |
-| cancellation during generation | PASS at adapter contract | generation mismatch raises `RuntimeCancelled` |
-| cancellation during/after tool result | PARTIAL | stale rejection tested; native local agent cancellation unavailable |
-| TTS failure | PASS at M4 boundary | bounded adapter returns fail-closed result |
-| session restart/reconnect | PASS at adapter lifecycle seam | `resume_session` is explicit |
-| queue overload/backpressure | PASS at M4 boundary | bounded ingress records drops |
+| runtime exception/unavailable | PASS | `UnconfiguredRuntime` raises `RuntimeUnavailable`; no fallback success fabricated |
+| memory read failure | PASS at adapter boundary | transport exception propagates without fabricated memory |
+| memory write/update failure | PASS at adapter boundary | transport exception propagates without fabricated write |
+| tool exception/timeout/malformed result | PASS at adapter boundary | deny-by-default prevents unregistered delegation |
+| cancellation before turn | PASS | generation/epoch rejection prevents any downstream TTS emission |
+| cancellation after tool result | PASS / PARTIAL | five post-turn cancellation calls in sustained run; stale audio count 0; native mid-stream cancellation unavailable |
+| TTS failure | PASS at M4 bounded adapter | failure returns fail-closed result |
+| session restart/reconnect | PASS | `resume_session()` clears cancellation and continues the same local session |
+| queue overload/backpressure | PASS at M4 boundary | existing bounded ingress tests cover explicit drops |
 
-The local Worker normal tooling was exercised with `wrangler dev --local`; `/health` and `/cost` passed. Its Telegram turn route was not used as a message transport because it requires bot credentials and sends Telegram egress. The local Python core path was exercised without secrets.
+The sustained run executed 50 turns, 45 real tool turns, five cancellation calls, two sessions, and Piper output for every response. The integrated native cancellation row remains **PARTIAL** because `app.core.agent.handle_text()` is synchronous at response level.
 
-PASS rows are real local code or contract tests, not proof of native streaming cancellation. Integrated M5 recovery remains **NOT MEASURED**.
+## Not executed
+
+Worker Telegram transport, production KV, provider-backed arbitrary turns, external weather/Wikipedia calls, and destructive actions were not invoked. No credentials, billing, providers, Meta/WhatsApp, or deployment configuration changed.

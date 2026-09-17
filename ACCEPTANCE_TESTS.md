@@ -88,12 +88,12 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | ID | Result | Evidence |
 |---|---|---|
 | M5-01 | PASS | Real HORUS contract discovered in `D:/HORUS/horus-core/app` and `worker/src/index.js`; local FastAPI/Worker entrypoints, KV keys, agent loop, and tool paths documented |
-| M5-02 | PASS / PARTIAL | `LocalHorusPythonPort` calls the installed HORUS agent, memory, and task modules; WAV coordinator reaches the port; native response streaming/cancellation is unavailable |
+| M5-02 | PASS / PARTIAL | `LocalHorusPythonPort` calls the installed HORUS agent, memory, and task modules; real WAV coordinator reaches the port; native response streaming/cancellation remains unavailable |
 | M5-03 | PASS / PARTIAL | Local Python HORUS core and normal `wrangler dev --local` Worker run are callable; Worker remains Telegram-only for turns and has no native local voice stream |
-| M5-04 | PASS / NOT MEASURED | Real local memory: 3 facts, correction, forget, and 2-session isolation passed; production Worker KV continuity not measured |
-| M5-05 | PARTIAL / BLOCKED | Real local `status`, `tasks`, and `cost` categories exercised; Worker weather/Wikipedia external tools not executed; mutation deny-by-default passes |
-| M5-06 | PASS / BLOCKED | WAV coordinator and local Worker dev path exist; live input probe had PortAudio host error, and native integrated voice is blocked |
-| M5-07 | BLOCKED | Required 50-turn/15-minute integrated voice run needs native runtime streaming and provider/session transport |
-| M5-08 | PASS / PARTIAL | Local adapter/M4 failure seams pass; native runtime cancellation/tool failure matrix is not measured |
+| M5-04 | PASS / NOT MEASURED | Real local memory: 3 facts, correction, late recall, and 2-session isolation passed; production Worker KV continuity not measured |
+| M5-05 | PASS / PARTIAL | 45 real spoken tool turns exercised `/status`, `/tasks`, and `/cost`; Worker weather/Wikipedia external tools not executed; mutation deny-by-default passes |
+| M5-06 | PASS / PARTIAL | Real WAV/STT/HORUS/Piper command path executed for 50 turns; native live input probe had PortAudio host error and native runtime voice stream is unavailable |
+| M5-07 | PASS / PARTIAL | 50/50 local integrated turns executed; native token streaming, provider-backed arbitrary turns, and true mid-response barge-in remain unavailable |
+| M5-08 | PASS / PARTIAL | Local adapter/M4 failure seams pass; five post-turn cancellation calls produced zero stale audio; native runtime failure/cancellation matrix is partial |
 | M5-09 | PASS | Full local regression, compileall, tracked-file secret scan, and diff check pass |
-| M5-10 | BLOCKED | Reports contain exact states and evidence; Roadmap step 6 is not complete pending native runtime transport |
+| M5-10 | PARTIAL | Reports contain exact PASS/PARTIAL/BLOCKED/NOT MEASURED states; Roadmap step 6 is not complete pending native runtime streaming/cancellation and external tool transport |

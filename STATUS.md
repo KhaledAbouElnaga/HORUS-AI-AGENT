@@ -1,12 +1,13 @@
 # Status
 
-- **Current milestone:** Milestone 5 — actual local HORUS runtime discovery and adapter integration; Roadmap step 6 remains incomplete.
-- **M5 implementation:** `runtime_adapter.py` defines session, memory, tool, cancellation, and recovery ports; `local_horus_port.py` delegates to the installed `D:/HORUS/horus-core/app`; `integration.py` wires WAV PCM -> chunk-fed STT -> runtime -> incremental TTS.
-- **Real local runtime:** `app.core.agent.handle_text`, `app.adapters.memory.store`, and `app.tasks.engine` executed through the adapter. Local `wrangler dev --local --port 8787` also ran the real Worker; `/health` and `/cost` returned 200 with paid mode off.
-- **Memory:** 3 facts, one correction, forget, late lookup, and two-session isolation passed against the installed local memory module. Production Worker KV was not exercised.
-- **Tools:** real local HORUS `/status`, `/tasks`, and `/cost` paths executed. Worker Open-Meteo/Wikipedia paths were discovered but not executed because turn transport is Telegram-only with protected egress.
-- **Streaming status:** PARTIAL. The installed Python agent returns complete responses and has no native streamed-token/cancellable session API; local word chunks are not presented as native streaming evidence.
-- **Live status:** M4 output probe passed; M4 input probe reported PortAudio host error. Native integrated microphone/runtime/TTS path is BLOCKED.
-- **Sustained M5 status:** BLOCKED / NOT MEASURED. The required 50-turn/15-minute integrated run, 10 tool turns, native interruptions, recovery matrix, latency distributions, and RSS drift need a native runtime transport.
-- **Verification:** 39 tests pass; compileall, `python scripts/secret_scan.py` (67 tracked files, 0 matches), and `git diff --check` pass.
-- **Safety:** No billing, credentials, providers, Meta/WhatsApp configuration, deployment, external message, or unrelated system changes were made. Do not close Issue #12 or merge PR #13.
+- **Current milestone:** Milestone 5 — real local HORUS runtime integration exercised; Roadmap step 6 remains PARTIAL.
+- **Runtime:** `LocalHorusPythonPort` calls the installed `D:/HORUS/horus-core/app` agent, memory store, and task engine. The Worker local-dev path also ran via `wrangler dev --local`; no production changes.
+- **Voice path:** 50 real WAV turns decoded by faster-whisper `tiny/int8`, routed through the real local HORUS command/memory paths, and synthesized by Piper. No cached transcripts were injected.
+- **Memory:** 3 early facts, location correction, late recall, and two-session isolation PASS; late corrected value was `keys` as actually decoded by STT.
+- **Tools:** 45 real spoken tool turns across `/status`, `/tasks`, and `/cost`; deny-by-default mutation safety PASS.
+- **Sustained evidence:** 50/50 turns, 5 cancellation calls, stale audio after cancel 0, RSS 502.98→732.59 MB (+229.61 MB); runtime-response-ready p95 21.027 ms; response-ready→first-audio p95 213.577 ms; user-end→first-audio p95 3,553.642 ms; tool intent→result p95 11.46 ms.
+- **Native streaming:** PARTIAL — installed Python agent returns complete responses; native first-token and mid-response cancellation remain NOT MEASURED.
+- **Mixed language:** concatenated Arabic+English input was exercised, but bilingual decoded-text quality remains NOT MEASURED.
+- **Regression:** 40 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
+- **Safety:** No credentials, billing, provider, Meta/WhatsApp, deployment, or unrelated-system changes.
+- **Next action:** resolve native streamed/cancellable runtime contract and provider-backed arbitrary turns before claiming M5 complete. PR #13 remains open; do not merge.

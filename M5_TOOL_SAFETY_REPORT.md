@@ -2,15 +2,19 @@
 
 ## Real categories exercised
 
-`LocalHorusPythonPort.invoke_tool()` delegates to the installed HORUS `app.core.agent.handle_text()` command path. Command: `PYTHONPATH=src python scripts/run_m5_local_runtime_evidence.py`.
+`LocalHorusPythonPort.invoke_tool()` delegates to the installed HORUS `app.core.agent.handle_text()` command path. The sustained run first decoded spoken WAV input with faster-whisper, normalized only recognized aliases, invoked the real command handler, and passed the resulting response to Piper.
 
-The following real read-only/local categories executed successfully: `status` (`/status`), `tasks` (`/tasks`), and `cost` (`/cost`). The result recorded `tools: ["cost", "status", "tasks"]`, with no task mutation.
+The run exercised 45 real tool-mediated turns across exactly three categories:
 
-The Worker source additionally contains `liveWeather()`/Open-Meteo and `liveWiki()`/Arabic Wikipedia. Those read-only external categories were source-verified but not executed because the Worker transport is Telegram-only and an authorized exchange would require protected credentials/egress. They are **NOT MEASURED**, not claimed as exercised.
+- `/status` — system health/status response
+- `/tasks` — active task listing
+- `/cost` — cost response from the installed router accounting path
+
+The three categories are recorded in `artifacts/m5_sustained_local.json`. The Worker-only Open-Meteo and Arabic Wikipedia paths were source-discovered but not executed because their only turn ingress is Telegram and no authorized transport was used.
 
 ## Safety
 
-- Mutation/destructive categories: **PASS** — `DenyByDefaultSafety` denies unregistered categories before runtime delegation; local test attempted `delete` and received `PermissionError`.
-- Malformed/timeout/tool exception: **PASS** at adapter contract; **NOT MEASURED** through a real tool execution.
-- Cancellation during/after tool result: **PARTIAL** — generation stale rejection is tested, but the installed Python agent has no native cancellable stream.
-- No destructive action, external message, billing, provider, credential, or deployment change was performed.
+- Mutation/destructive default: **PASS** — `DenyByDefaultSafety` rejects unregistered categories before delegation.
+- Tool result incorporated into spoken output: **PASS** for the three local command categories; Piper synthesized every resulting response.
+- Malformed/timeout/exception and stale-output handling: **PASS at adapter boundary; PARTIAL integrated** because the installed agent has no interruptible native stream.
+- No destructive command, credential, billing, provider, Meta/WhatsApp, or deployment action was attempted.

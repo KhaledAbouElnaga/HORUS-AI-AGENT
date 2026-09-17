@@ -46,5 +46,6 @@ def test_wav_pipeline_reaches_runtime_and_incremental_audio(tmp_path):
     assert turn.response == "reply for s1: hello"
     assert turn.audio_chunks == 1
     assert audio == ["reply for s1: hello"]
-    assert turn.metrics.final_to_first_token_ms is not None
-    assert turn.metrics.first_token_to_first_audio_ms is not None
+    assert turn.metrics.runtime_response_ready_ms is not None
+    assert turn.metrics.final_to_first_token_ms is None
+    assert turn.metrics.first_token_to_first_audio_ms is None
