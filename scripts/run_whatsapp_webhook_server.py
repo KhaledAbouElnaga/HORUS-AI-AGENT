@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from horus_local_voice.whatsapp_calling import WhatsAppCallingAdapter
-from horus_local_voice.whatsapp_webhook import WhatsAppCallingWebhook
+from horus_local_voice.whatsapp_webhook import WhatsAppCallingWebhook, parse_meta_calls_payload
 
 
 class _Runtime:
@@ -23,8 +23,7 @@ class _Runtime:
 
 
 def _parser(payload: dict) -> list[dict]:
-    # Live Meta payload mapping remains gated until an authorized sample arrives.
-    return []
+    return parse_meta_calls_payload(payload)
 
 
 adapter = WhatsAppCallingAdapter(_Runtime())

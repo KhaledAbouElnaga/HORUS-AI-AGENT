@@ -14,4 +14,4 @@ Temporary public URL: `https://cold-jokes-make.loca.lt/webhooks/whatsapp/calling
 
 ## Live call
 
-**BLOCKED / NOT EXECUTED.** Calling is enabled on the Meta test number per owner report, but WABA subscription, app permissions, webhook registration, and non-SIP WebRTC media reachability remain unverified. No Telegram/WhatsApp message or call was sent. Therefore Arabic, English, mixed, 10-turn, tool, memory, barge-in, reconnect, and live media metrics are **NOT MEASURED**, not inferred from local M4/M5 runs.
+**BLOCKED / NOT EXECUTED.** Calling is enabled on the Meta test number and the `calls` webhook sample test succeeded per owner report. The parser now accepts the documented v26 sample shape. A real inbound call still requires the public callback to be configured with the account and an SDP/WebRTC media endpoint; no WhatsApp call was initiated.

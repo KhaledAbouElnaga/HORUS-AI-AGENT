@@ -34,6 +34,59 @@ class WebhookResponse:
     body: str
 
 
+def parse_meta_calls_payload(payload: dict) -> list[dict]:
+    """Parse Meta's documented ``object/entry/changes/value/calls`` shape.
+
+    Only user-initiated non-SIP ``connect`` and ``terminate`` notifications are
+    mapped. SDP is passed ephemerally to the channel boundary and never exposed
+    by redacted observability.
+    """
+    if payload.get("object") != "whatsapp_business_account":
+        raise WebhookPayloadError("unexpected webhook object")
+    result: list[dict] = []
+    for entry in payload.get("entry", []):
+        if not isinstance(entry, dict) or not isinstance(entry.get("changes"), list):
+            raise WebhookPayloadError("entry.changes must be a list")
+        waba_id = entry.get("id")
+        if not isinstance(waba_id, str) or not waba_id:
+            raise WebhookPayloadError("entry.id is required")
+        for change in entry["changes"]:
+            if not isinstance(change, dict) or change.get("field") != "calls":
+                continue
+            value = change.get("value")
+            if not isinstance(value, dict) or value.get("messaging_product") != "whatsapp":
+                raise WebhookPayloadError("calls change has invalid value")
+            metadata = value.get("metadata")
+            if not isinstance(metadata, dict) or not isinstance(metadata.get("phone_number_id"), str):
+                raise WebhookPayloadError("calls metadata.phone_number_id is required")
+            contacts = value.get("contacts") or []
+            contact = contacts[0] if contacts and isinstance(contacts[0], dict) else {}
+            contact_user = contact.get("user_id")
+            for call in value.get("calls", []):
+                if not isinstance(call, dict) or not isinstance(call.get("id"), str):
+                    raise WebhookPayloadError("call.id is required")
+                event = call.get("event")
+                kind = {"connect": "incoming", "terminate": "hangup"}.get(event)
+                if kind is None:
+                    raise WebhookPayloadError(f"unsupported calls event: {event}")
+                user_id = call.get("from_user_id") or contact_user or call.get("from")
+                if not isinstance(user_id, str) or not user_id:
+                    raise WebhookPayloadError("call user identity is required")
+                session = call.get("session") if isinstance(call.get("session"), dict) else {}
+                result.append({
+                    "event_id": f"{call['id']}:{event}:{call.get('timestamp', '')}",
+                    "kind": kind,
+                    "call_id": call["id"],
+                    "user_id": user_id,
+                    "phone_number_id": metadata["phone_number_id"],
+                    "waba_id": waba_id,
+                    "timestamp": call.get("timestamp"),
+                    "direction": call.get("direction"),
+                    "session": {"sdp_type": session.get("sdp_type"), "sdp": session.get("sdp")} if session else None,
+                })
+    return result
+
+
 class WhatsAppCallingWebhook:
     """Prepared GET verification and POST ingress for the non-SIP path."""
 

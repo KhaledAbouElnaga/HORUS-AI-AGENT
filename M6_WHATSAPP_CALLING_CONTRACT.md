@@ -23,4 +23,5 @@ Sources: [Calling](https://developers.facebook.com/docs/whatsapp/cloud-api/calli
 - Verification fields: `hub.mode=subscribe`, `hub.verify_token`, and `hub.challenge`; successful verification returns the challenge verbatim.
 - Runtime config source: `WHATSAPP_WEBHOOK_VERIFY_TOKEN` (secret value is not committed or logged).
 - POST authenticity: validate `X-Hub-Signature-256` using the Meta app secret before parsing or invoking HORUS; the app secret is never stored in this repository.
-- The endpoint is framework-neutral and is not deployed or connected to production by this change.
+- **PASS — v26 sample parser:** `parse_meta_calls_payload()` maps the documented `object → entry → changes[field=calls] → value → calls` shape. It supports `connect` (SDP offer, mapped to inbound session start) and `terminate` (mapped to teardown), with contact/from user-ID fallback and metadata phone-number correlation.
+- The endpoint remains framework-neutral and is not deployed or connected to production by this repository change.
