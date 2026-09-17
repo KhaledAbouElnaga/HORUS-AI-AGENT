@@ -38,6 +38,17 @@ def test_duplicate_control_event_is_idempotent_and_redacted():
     assert observed == {"kind": "connected", "event_id": "[REDACTED]", "media_bytes": 0}
 
 
+def test_existing_call_identity_mismatch_is_rejected_without_side_effect():
+    runtime = FakeRuntime(); adapter = WhatsAppCallingAdapter(runtime)
+    assert adapter.ingest(envelope("e1", "incoming"))["status"] == "accepted"
+    bad = envelope("e2", "connected", user_id="user-2")
+    row = adapter.ingest(bad)
+    assert row["status"] == "contract_mismatch"
+    assert row["stale_output"] == 0
+    assert adapter.identity_mismatches == 1
+    assert runtime.calls == [("open", "wa:phone-1:user-1:call-1")]
+
+
 def test_media_before_connect_and_mismatched_lifecycle_fail_closed():
     runtime = FakeRuntime(); adapter = WhatsAppCallingAdapter(runtime)
     row = adapter.ingest(envelope("e1", "media", media=b"x"))

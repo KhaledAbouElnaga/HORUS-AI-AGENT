@@ -68,6 +68,7 @@ class WhatsAppCallingAdapter:
         self.call_to_session: dict[str, str] = {}
         self.duplicate_events = 0
         self.stale_events = 0
+        self.identity_mismatches = 0
 
     @staticmethod
     def session_id(event: CallingEvent) -> str:
@@ -82,6 +83,10 @@ class WhatsAppCallingAdapter:
             self.call_to_session[event.call_id] = sid
         else:
             session = self.sessions[sid]
+            if (event.user_id, event.phone_number_id) != (session.user_id, session.phone_number_id):
+                self.identity_mismatches += 1
+                self.stale_events += 1
+                return {"status": "contract_mismatch", "session_id": sid, "stale_output": 0}
         if event.event_id in session.seen_event_ids:
             self.duplicate_events += 1
             return {"status": "duplicate", "session_id": sid, "stale_output": 0}
