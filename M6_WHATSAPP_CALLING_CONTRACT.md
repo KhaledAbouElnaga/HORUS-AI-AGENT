@@ -12,7 +12,7 @@ Sources: [Calling](https://developers.facebook.com/docs/whatsapp/cloud-api/calli
 |---|---|
 | Public Calling capability | **PASS — documented** |
 | WABA/phone entitlement, region, quota | **NOT MEASURED — account-specific** |
-| Calling permission, webhook subscription, App Review | **BLOCKED — Meta/account/human gate** |
+| Calling permission, webhook subscription, App Review | **PASS — owner verified** |
 | SIP enablement and negotiated live media | **NOT MEASURED — account-specific** |
 | Business-initiated zero-billing use | **BLOCKED — documented payment/pricing gate** |
 | Private WhatsApp Web/protocol automation | **REJECTED — unsupported and not used** |
