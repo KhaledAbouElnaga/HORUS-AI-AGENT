@@ -24,3 +24,4 @@
 - The deployed HORUS Worker exposes Telegram-only ingress and Telegram egress; source-level KV/tool discovery is not execution evidence. Keep the M5 transport gate explicit until a callable session API exists.
 - When adapting the installed HORUS memory store, its internal key is `kind:key`; namespace filtering must inspect the stored `key` field rather than assuming the kind prefix is retained there.
 - Treat Meta Calling public documentation and account entitlement as separate gates; build a normalized, redacted simulator without inferring live payload or media availability.
+- Keep a persistent event loop for aiortc peer connections; `asyncio.run()` per SDP operation closes the loop and breaks the live RTP/ICE lifecycle.

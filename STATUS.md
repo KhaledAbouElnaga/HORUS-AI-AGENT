@@ -1,6 +1,6 @@
 # Status
 
-- **Current milestone:** Milestone 6 — official WhatsApp Calling adapter and simulator **VERIFIED HUMAN-GATE READY**.
+- **Current milestone:** Milestone 6 — official WhatsApp Calling adapter, webhook ingress, and non-SIP WebRTC/media bridge **IMPLEMENTED; LIVE MEDIA NOT MEASURED**.
 - **Runtime:** `LocalHorusPythonPort` calls the installed `D:/HORUS/horus-core/app` agent, memory store, and task engine. The Worker local-dev path also ran via `wrangler dev --local`; no production changes.
 - **Voice path:** 50 real WAV turns decoded by faster-whisper `tiny/int8`, routed through the real local HORUS command/memory paths, and synthesized by Piper. No cached transcripts were injected.
 - **Memory:** 3 early facts, location correction, late recall, and two-session isolation PASS; late corrected value was `keys` as actually decoded by STT.
@@ -8,7 +8,7 @@
 - **Sustained evidence:** 50/50 turns, 5 cancellation calls, stale audio after cancel 0, RSS 502.98→732.59 MB (+229.61 MB); runtime-response-ready p95 21.027 ms; response-ready→first-audio p95 213.577 ms; user-end→first-audio p95 3,553.642 ms; tool intent→result p95 11.46 ms.
 - **Native streaming:** PARTIAL — installed Python agent returns complete responses; native first-token and mid-response cancellation remain NOT MEASURED.
 - **Mixed language:** concatenated Arabic+English input was exercised, but bilingual decoded-text quality remains NOT MEASURED.
-- **Regression:** 41 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
+- **Regression:** 54 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
 - **Safety:** No credentials, billing, provider, Meta/WhatsApp, deployment, or unrelated-system changes.
-- **Next action:** configure the prepared non-SIP callback in Meta, then perform the smallest reversible webhook/media probe. Native streamed/cancellable runtime and bilingual decoded quality remain PARTIAL / NOT MEASURED; deployed Worker voice transport remains BLOCKED. PR #15 remains open; do not merge.
-- **M6 official Calling:** public capability documented PASS; Calling enabled on the Meta test number per owner report. Prepared callback `https://cold-jokes-make.loca.lt/webhooks/whatsapp/calling` passed external GET challenge (200) and invalid-signature POST rejection (403); tunnel is temporary. WABA/phone readiness, permissions, webhook subscription, and media/WebRTC readiness remain NOT MEASURED. Live call is BLOCKED; official-contract replay is PASS / SIMULATED.
+- **Next action:** run one owner-initiated test call with the media runtime configured. Live WebRTC negotiation and STT→HORUS→TTS audio remain NOT MEASURED; PR #15 remains open; do not merge.
+- **M6 official Calling:** published app, `calls` subscription, callback verification, WABA app subscription, and owner-reported live `incoming`/hangup webhook delivery are PASS. The non-SIP `aiortc` WebRTC/PCM bridge and STT→HORUS→TTS processor are implemented and tested; live SDP/ICE/DTLS-SRTP and live audio remain NOT MEASURED. Official-contract replay is PASS / SIMULATED.
