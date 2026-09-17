@@ -1,15 +1,19 @@
 # M5 Memory and Session Report
 
-## Contract
+## Real local HORUS path
 
-The real Worker stores short conversation context in `ctx:<user-id>` (last 10 messages, seven-day TTL) and durable facts in `facts:<user-id>` (last 50 facts). `/memory`, `افتكر`, `فاكر`, and `انسى` are handled in `worker/src/index.js`; `/forget` clears conversation context rather than durable facts.
+`LocalHorusPythonPort` delegates to `D:/HORUS/horus-core/app/adapters/memory/store.py`. The store is an in-memory local fallback in this installation; it is not production KV/Supabase persistence. The adapter namespaces keys by session ID and filters reads by that namespace.
 
-The local adapter exposes `lookup_memory()` and `write_memory()` and scopes every request to an explicitly opened unique session ID.
+## Executed evidence
 
-## Execution result
+Command: `PYTHONPATH=src python scripts/run_m5_local_runtime_evidence.py`
 
-- Three early facts recalled late: **BLOCKED** — requires a real callable HORUS transport/Telegram exchange.
-- One correction/update: **BLOCKED** — the Worker has append-style `facts` and no exposed update endpoint.
-- Forget/override: **BLOCKED** for the same external transport gate; source inspection confirms `/forget` semantics above.
-- Isolation between two session IDs: **PASS at adapter contract level**, covered by automated tests using an explicitly named recording transport; **NOT MEASURED against the real Worker**.
-- No cross-session data is fabricated or reported as real evidence.
+Result: two real adapter sessions; three facts (`name`, `city`, `role`) introduced; `city=Cairo` corrected to `city=Giza`; late lookup returned `Giza`; second session returned no city; `forget` removed the city fact. All are calls to the installed HORUS memory module, not a test double.
+
+- Three facts introduced/recalled late: **PASS**
+- Correction/update: **PASS**
+- Forget: **PASS** (the local store supports `forget`; Worker `/forget` separately clears context)
+- Two-session isolation: **PASS** for the adapter namespace over the local store
+- Production Worker KV continuity: **NOT MEASURED**; its `ctx:<user-id>` and `facts:<user-id>` path requires its Telegram/Worker transport
+
+No persistent external memory was changed.

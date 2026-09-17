@@ -1,25 +1,32 @@
 # M5 Runtime Integration
 
-## Scope and discovery
+## Exhaustive discovery
 
-Issue #12 requires the M4 WAV/live voice path to reach the actual HORUS runtime. The runtime discovered outside this repository is `D:/HORUS/horus-core/worker/src/index.js`.
+Inspected:
 
-Its real entrypoints are:
+- `D:/HORUS/horus-core/app/main.py`, `app/core/agent.py`, `app/adapters/memory/store.py`, `app/adapters/llm/router.py`, `app/tasks/engine.py`, and `app/core/config.py`.
+- `D:/HORUS/horus-core/worker/src/index.js` and `worker/wrangler.toml`.
+- `D:/HORUS` runtime/config/backup folders and `C:/Users/khale/Documents/Absher-Bot` for gateway, server, listen, localhost, WebSocket, RPC, API, runtime, session, agent, Telegram, polling, and port references.
+- Running-process candidates and all TCP listening ports; no identifiable HORUS gateway process was mapped by `tasklist`. Port `8787` was created by the local Wrangler Worker during this pass.
 
-- `GET /health` and `GET /cost` on the deployed Cloudflare Worker.
-- `POST /webhook/telegram`, which accepts Telegram update JSON, uses `msg.from.id`/`msg.chat.id` as identity, and sends replies through the Telegram Bot API.
+## Actual callable paths
 
-Inside that entrypoint, the real paths are KV-backed `ctx:<user-id>` conversation context, `facts:<user-id>` durable memory, `tasks:<user-id>` task state, the local command handlers, `liveWeather()` using Open-Meteo, `liveWiki()` using Arabic Wikipedia, and `llm()` provider failover. Voice input is transcribed by the Worker and voice output is sent through Telegram; there is no callable streaming-token or local audio-runtime endpoint.
+The local Python HORUS application is callable in-process from `D:/HORUS/horus-core/app`:
 
-## Adapter implementation
+- `app.main:app` exposes real FastAPI `/health`, `/cost`, and `POST /webhook/telegram` entrypoints.
+- `app.core.agent.handle_text(text, context)` is the real agent loop.
+- `app.adapters.memory.store` is the real local memory store (`remember`, `recall`, `forget`).
+- `app.tasks.engine` is the real task state path.
+- `app.adapters.llm.router` is the real provider router, but this environment has no configured provider key and paid mode is off.
 
-`src/horus_local_voice/runtime_adapter.py` defines the exact dependency-injected `RuntimePort` needed by the discovered runtime: session resume, streamed turn, memory search/write, tool invocation, and cancellation. `VoiceRuntimeAdapter` owns local session identity, generation-based stale rejection, memory delegation, and deny-by-default tool authorization. `UnconfiguredRuntime` raises `RuntimeUnavailable`; it never substitutes a fake success.
+`LocalHorusPythonPort` calls those modules directly; it does not reimplement them. The local runtime returns a completed response, not native token deltas, so word chunks are explicitly marked transport chunks and not streaming evidence.
 
-`src/horus_local_voice/integration.py` connects WAV PCM -> chunk-fed `IncrementalTranscriber` -> runtime stream -> `PipelinedResponder` -> incremental audio emission with measured boundaries. Its test transport is explicitly a test double, not runtime evidence.
+The exact Worker also runs through its normal local tooling: `wrangler dev --local --port 8787 --show-interactive-dev-session=false`. Real local-dev checks returned `/health` HTTP 200 with Workers AI ready and `/cost` HTTP 200 with paid mode off. This is local Worker execution, not deployed execution. The Worker still exposes Telegram-only turn ingress/egress and no local session-stream API.
 
 ## Result
 
-- Adapter contract and WAV coordinator: **PASS** (36 automated tests, including the end-to-end coordinator seam).
-- Real HORUS runtime transport: **BLOCKED**. The Worker exposes Telegram-only ingress for turns and has no local streaming API. A direct read-only probe of the known Worker `/health` URL returned HTTP 403; no credentials or deployment changes were attempted.
-- End-to-end real runtime speech: **BLOCKED**, not claimed.
-- Provider, credential, billing, Meta/WhatsApp, and external-system changes: **NOT PERFORMED**.
+- Local real HORUS core adapter: **PASS** for callable agent commands, memory, task/status/cost paths.
+- WAV -> chunk-fed STT -> runtime -> incremental TTS coordinator: **PASS** at the transport boundary; arbitrary LLM turns remain provider-dependent.
+- Native streamed HORUS output/cancellation: **PARTIAL**; the Python core has no streaming API and cancellation is not interruptible during its synchronous `handle_text` call.
+- Real end-to-end microphone/WAV voice with native HORUS streaming: **BLOCKED**.
+- No provider, credential, billing, Meta/WhatsApp, deployment, or unrelated-system changes were made.

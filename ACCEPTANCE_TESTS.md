@@ -87,13 +87,13 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 
 | ID | Result | Evidence |
 |---|---|---|
-| M5-01 | PASS | Real HORUS contract discovered in external `D:/HORUS/horus-core/worker/src/index.js`; entrypoints, KV keys, LLM loop, and weather/Wikipedia paths documented |
-| M5-02 | PASS | `VoiceRuntimeAdapter` and WAV coordinator delegate session, stream, memory, tools, cancellation, and TTS; no fake default runtime |
-| M5-03 | BLOCKED | Worker exposes Telegram-only ingress/egress and no callable local streaming runtime API; known `/health` probe returned HTTP 403 |
-| M5-04 | PASS / BLOCKED | Local adapter session isolation and memory/tool seams tested; real three-fact continuity requires blocked transport |
-| M5-05 | PASS / BLOCKED | Deny-by-default mutation safety passes locally; three real tool categories and read-only external execution blocked by runtime transport |
-| M5-06 | PASS / BLOCKED | Deterministic WAV coordinator exists and live device probe ran; integrated live runtime path blocked (input probe host error, output probe PASS) |
-| M5-07 | BLOCKED | Required 50-turn/15-minute real integrated run cannot execute without callable HORUS transport |
-| M5-08 | PASS / NOT MEASURED | Local failure/recovery seams tested; integrated runtime failure matrix and required M5 latency/RSS drift not measured |
-| M5-09 | PASS | Full local regression and compile checks pass; tracked-file secret scan and diff check recorded in PR evidence |
-| M5-10 | BLOCKED | M5 reports are complete with exact PASS/PARTIAL/BLOCKED/NOT MEASURED states; external runtime integration remains the gate |
+| M5-01 | PASS | Real HORUS contract discovered in `D:/HORUS/horus-core/app` and `worker/src/index.js`; local FastAPI/Worker entrypoints, KV keys, agent loop, and tool paths documented |
+| M5-02 | PASS / PARTIAL | `LocalHorusPythonPort` calls the installed HORUS agent, memory, and task modules; WAV coordinator reaches the port; native response streaming/cancellation is unavailable |
+| M5-03 | PASS / PARTIAL | Local Python HORUS core and normal `wrangler dev --local` Worker run are callable; Worker remains Telegram-only for turns and has no native local voice stream |
+| M5-04 | PASS / NOT MEASURED | Real local memory: 3 facts, correction, forget, and 2-session isolation passed; production Worker KV continuity not measured |
+| M5-05 | PARTIAL / BLOCKED | Real local `status`, `tasks`, and `cost` categories exercised; Worker weather/Wikipedia external tools not executed; mutation deny-by-default passes |
+| M5-06 | PASS / BLOCKED | WAV coordinator and local Worker dev path exist; live input probe had PortAudio host error, and native integrated voice is blocked |
+| M5-07 | BLOCKED | Required 50-turn/15-minute integrated voice run needs native runtime streaming and provider/session transport |
+| M5-08 | PASS / PARTIAL | Local adapter/M4 failure seams pass; native runtime cancellation/tool failure matrix is not measured |
+| M5-09 | PASS | Full local regression, compileall, tracked-file secret scan, and diff check pass |
+| M5-10 | BLOCKED | Reports contain exact states and evidence; Roadmap step 6 is not complete pending native runtime transport |

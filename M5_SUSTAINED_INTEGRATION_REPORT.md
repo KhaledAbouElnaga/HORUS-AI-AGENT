@@ -2,19 +2,19 @@
 
 ## Required run
 
-A real >=50-turn integrated run was **BLOCKED**, not replaced with cached rows or the M4 deterministic harness. The missing link is a callable HORUS runtime transport: the deployed Worker accepts Telegram updates and sends Telegram replies, but does not expose streaming local-runtime/session/tool endpoints. No credentials or external configuration were changed to bypass that boundary.
+A real >=50-turn or 15-minute integrated voice run remains **BLOCKED**. The local Python HORUS agent is callable for direct commands, but arbitrary turns require the provider router and no provider key is configured; it also returns complete responses rather than native streaming deltas. The local Worker has Workers AI available in local-dev mode, but its only turn route is Telegram webhook with Telegram egress, not a local voice/session API.
 
-## Required evidence status
+## Evidence status
 
 | Requirement | State | Evidence |
 |---|---|---|
-| 50 consecutive integrated turns / 15 minutes | BLOCKED | No real runtime transport |
-| Arabic, English, mixed | NOT MEASURED | M4 fixtures exist; not M5 runtime evidence |
-| >=5 interruptions | NOT MEASURED | Runtime cancellation endpoint unavailable |
-| >=3 recovery events | NOT MEASURED | No integrated runtime execution |
-| >=10 real tool turns | BLOCKED | Telegram-only Worker ingress; no authorized exchange |
-| late memory recall and two session IDs | BLOCKED | KV is keyed by Telegram user ID; no callable test session API |
-| queue/drop/duplicate/stale metrics | PASS at local adapter tests; NOT MEASURED integrated | 36-test suite |
-| RSS and latency drift | NOT MEASURED | No integrated run |
+| Real callable HORUS turn | PASS / PARTIAL | Local `app.core.agent.handle_text('/status')` executed; native streaming unavailable |
+| Arabic, English, mixed integrated turns | NOT MEASURED | No native local runtime stream |
+| >=5 interruptions | NOT MEASURED | No cancellable runtime stream |
+| >=3 recovery events | NOT MEASURED | No integrated runtime session |
+| >=10 real tool-mediated turns | PARTIAL | Three real local categories exercised; 10-turn integrated runtime not executed |
+| Three facts, correction, late recall, two sessions | PASS | Real local memory evidence script passed; production KV not exercised |
+| Queue/drop/duplicate/stale metrics | PASS / NOT MEASURED | Adapter/M4 seam tests pass; no sustained runtime stream |
+| RSS and latency drift | NOT MEASURED | No valid integrated run |
 
-No sustained M5 result is claimed.
+No cached M4 rows were relabelled as M5 evidence.

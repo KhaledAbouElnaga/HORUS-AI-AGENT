@@ -2,20 +2,16 @@
 
 ## Integrated metrics
 
-The required M5 latency distributions are **NOT MEASURED** because no real HORUS runtime turn could be executed from this repository.
+The required M5 integrated latency distributions are **NOT MEASURED**. The installed Python HORUS agent returns a complete response and the Worker has no local voice/session stream endpoint, so timing its word chunking would misrepresent runtime latency.
 
 | Metric | State | Value |
 |---|---|---|
-| transcript-final -> HORUS first token p50/p95 | NOT MEASURED | runtime stream unavailable |
-| HORUS first token -> first synthesized chunk p50/p95 | NOT MEASURED | runtime stream unavailable |
-| user-end -> first response audio p50/p95 | NOT MEASURED | runtime stream unavailable |
-| cancellation -> software silence p50/p95 | NOT MEASURED | integrated cancellation unavailable |
-| tool intent -> tool result p50/p95 | BLOCKED | Telegram-only ingress; no safe authorized exchange |
-| memory lookup/update latency | BLOCKED | external KV path not callable here |
-| RSS start/end and drift | NOT MEASURED | no integrated run |
+| transcript-final -> HORUS first token p50/p95 | NOT MEASURED | no native runtime stream |
+| HORUS first token -> first synthesized chunk p50/p95 | NOT MEASURED | no native runtime stream |
+| user-end -> first response audio p50/p95 | NOT MEASURED | no valid integrated audio turn |
+| cancellation -> software silence p50/p95 | NOT MEASURED | native cancellation unavailable |
+| tool intent -> tool result p50/p95 | PARTIAL | local `/status`, `/tasks`, `/cost` calls execute; no 10-turn distribution |
+| memory lookup/update latency | PARTIAL | local store calls execute; production KV not exercised |
+| RSS start/end and drift | NOT MEASURED | no sustained integrated run |
 
-The M4 baseline remains the comparison reference, not an M5 result. The WAV coordinator records the required boundary timestamps once a real `RuntimePort` transport is supplied.
-
-## No benchmark substitution
-
-Existing M4 artifacts were not relabelled as M5 evidence. No heavy benchmark was run to conceal the missing runtime transport.
+M4 measurements remain the comparison baseline. No heavy M5 benchmark was run without a valid integrated stream.

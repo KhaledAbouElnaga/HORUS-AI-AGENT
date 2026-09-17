@@ -1,13 +1,16 @@
 # M5 Tool Safety Report
 
-## Real tool paths discovered
+## Real categories exercised
 
-`worker/src/index.js` contains these real paths: local read/status commands; task persistence under `tasks:<user-id>`; live weather through Open-Meteo; and live Wikipedia through Arabic Wikipedia. The Worker routes recognized weather/Wikipedia intents before `llm()`.
+`LocalHorusPythonPort.invoke_tool()` delegates to the installed HORUS `app.core.agent.handle_text()` command path. Command: `PYTHONPATH=src python scripts/run_m5_local_runtime_evidence.py`.
 
-## Execution result
+The following real read-only/local categories executed successfully: `status` (`/status`), `tasks` (`/tasks`), and `cost` (`/cost`). The result recorded `tools: ["cost", "status", "tasks"]`, with no task mutation.
 
-- Three real safe categories exercised through the actual HORUS tool path: **BLOCKED**. The only external ingress is Telegram webhook and the known Worker probe returned HTTP 403. No bot token, credential, or account configuration was requested or changed.
-- Read-only external/data category (weather or Wikipedia): **BLOCKED** for the same transport gate; source path is verified but not executed.
-- Mutation/destructive default: **PASS at local adapter boundary**. `DenyByDefaultSafety` denies every unregistered category and `VoiceRuntimeAdapter.call_tool()` raises `PermissionError` before delegation.
-- Malformed/timeout/tool exception and cancellation stale-output handling: **PASS at adapter test boundary**; **NOT MEASURED through the real Worker**.
-- No unavailable tool was fabricated as exercised evidence.
+The Worker source additionally contains `liveWeather()`/Open-Meteo and `liveWiki()`/Arabic Wikipedia. Those read-only external categories were source-verified but not executed because the Worker transport is Telegram-only and an authorized exchange would require protected credentials/egress. They are **NOT MEASURED**, not claimed as exercised.
+
+## Safety
+
+- Mutation/destructive categories: **PASS** — `DenyByDefaultSafety` denies unregistered categories before runtime delegation; local test attempted `delete` and received `PermissionError`.
+- Malformed/timeout/tool exception: **PASS** at adapter contract; **NOT MEASURED** through a real tool execution.
+- Cancellation during/after tool result: **PARTIAL** — generation stale rejection is tested, but the installed Python agent has no native cancellable stream.
+- No destructive action, external message, billing, provider, credential, or deployment change was performed.
