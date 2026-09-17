@@ -25,3 +25,4 @@
 - When adapting the installed HORUS memory store, its internal key is `kind:key`; namespace filtering must inspect the stored `key` field rather than assuming the kind prefix is retained there.
 - Treat Meta Calling public documentation and account entitlement as separate gates; build a normalized, redacted simulator without inferring live payload or media availability.
 - Keep a persistent event loop for aiortc peer connections; `asyncio.run()` per SDP operation closes the loop and breaks the live RTP/ICE lifecycle.
+- Accumulate live RTP audio with WebRTC VAD and endpoint on consecutive silence; fixed short Whisper windows can be discarded by VAD and destabilize language detection.

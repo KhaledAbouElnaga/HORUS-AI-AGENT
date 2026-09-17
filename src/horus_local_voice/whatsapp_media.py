@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, Protocol
 from urllib.error import HTTPError, URLError
@@ -85,12 +86,13 @@ class VoiceTurnProcessor(Protocol):
 class PipelineVoiceTurnProcessor:
     """Concrete PCM → STT → HORUS → TTS processor for one call session."""
 
-    def __init__(self, session_id: str, transcriber, runtime, synthesize: Callable[[str], bytes | Iterable[bytes]], tts_sample_rate: int = 48_000):
+    def __init__(self, session_id: str, transcriber, runtime, synthesize: Callable[[str], bytes | Iterable[bytes]], tts_sample_rate: int = 48_000, stage_logger: Callable[[str, dict], None] | None = None):
         self.session_id = session_id
         self.transcriber = transcriber
         self.runtime = runtime
         self.synthesize = synthesize
         self.tts_sample_rate = tts_sample_rate
+        self.stage_logger = stage_logger or (lambda stage, metrics: None)
 
     @staticmethod
     def _resample(pcm: bytes, source_rate: int, target_rate: int) -> bytes:
@@ -111,11 +113,14 @@ class PipelineVoiceTurnProcessor:
         return cls._resample(pcm, sample_rate, 16_000)
 
     def process_utterance(self, pcm_48khz: bytes, sample_rate: int) -> Iterable[bytes]:
+        started = time.perf_counter()
         pcm_16khz = self._to_16khz(pcm_48khz, sample_rate)
         rows = self.transcriber.run(pcm_16khz)
+        self.stage_logger("stt_complete", {"elapsed_ms": round((time.perf_counter() - started) * 1000, 2)})
         if not rows or not rows[-1].text.strip():
             return []
         response = "".join(self.runtime.stream_turn(self.session_id, rows[-1].text, None))
+        self.stage_logger("horus_turn_complete", {"elapsed_ms": round((time.perf_counter() - started) * 1000, 2)})
         outputs: list[bytes] = []
         for phrase in response.split(". "):
             phrase = phrase.strip()
@@ -126,36 +131,130 @@ class PipelineVoiceTurnProcessor:
                 outputs.append(self._resample(bytes(rendered), self.tts_sample_rate, 48_000))
             else:
                 outputs.extend(self._resample(bytes(chunk), self.tts_sample_rate, 48_000) for chunk in rendered if chunk)
+        self.stage_logger("tts_complete", {"elapsed_ms": round((time.perf_counter() - started) * 1000, 2), "chunks": len(outputs)})
         return outputs
+
+
+class VadEndpointAccumulator:
+    """Accumulate 20 ms PCM frames until speech begins and then ends."""
+
+    def __init__(self, aggressiveness: int = 2, end_silence_ms: int = 240, max_utterance_ms: int = 15_000):
+        try:
+            import webrtcvad
+        except ImportError as exc:
+            raise MediaContractError("webrtcvad is required for live endpointing") from exc
+        self.vad = webrtcvad.Vad(aggressiveness)
+        self.end_frames = max(1, end_silence_ms // 20)
+        self.max_frames = max(1, max_utterance_ms // 20)
+        self._buffer = bytearray()
+        self._utterance = bytearray()
+        self._started = False
+        self._silence = 0
+        self._frames = 0
+
+    def push(self, pcm: bytes, sample_rate: int) -> list[bytes]:
+        if sample_rate not in {8_000, 16_000, 32_000, 48_000}:
+            raise MediaContractError("unsupported VAD sample rate")
+        frame_bytes = sample_rate * 2 // 50
+        self._buffer.extend(pcm)
+        completed: list[bytes] = []
+        while len(self._buffer) >= frame_bytes:
+            frame = bytes(self._buffer[:frame_bytes])
+            del self._buffer[:frame_bytes]
+            voiced = self.vad.is_speech(frame, sample_rate)
+            if not self._started:
+                if voiced:
+                    self._started = True
+                    self._silence = 0
+                    self._frames = 0
+                    self._utterance.clear()
+                else:
+                    continue
+            self._utterance.extend(frame)
+            self._frames += 1
+            self._silence = 0 if voiced else self._silence + 1
+            if self._silence >= self.end_frames or self._frames >= self.max_frames:
+                completed.append(bytes(self._utterance))
+                self._utterance.clear()
+                self._started = False
+                self._silence = 0
+                self._frames = 0
+        return completed
+
+    def flush(self) -> list[bytes]:
+        if not self._started or not self._utterance:
+            return []
+        result = [bytes(self._utterance)]
+        self._utterance.clear()
+        self._started = False
+        self._silence = 0
+        self._frames = 0
+        return result
 
 
 class DuplexVoiceBridge:
     """Routes decoded inbound PCM through STT/runtime/TTS and queues output."""
 
-    def __init__(self, processor: VoiceTurnProcessor, max_output_chunks: int = 64, min_utterance_ms: int = 0):
+    def __init__(self, processor: VoiceTurnProcessor, max_output_chunks: int = 64, min_utterance_ms: int = 0, background_processing: bool = False, stage_logger: Callable[[str, dict], None] | None = None, endpointing: bool = False, end_silence_ms: int = 240):
         self.processor = processor
         self.output: queue.Queue[tuple[bytes, int]] = queue.Queue(maxsize=max_output_chunks)
+        self.input_queue: queue.Queue[tuple[bytes, int] | None] = queue.Queue(maxsize=128)
         self.min_utterance_ms = min_utterance_ms
+        self.endpoint = VadEndpointAccumulator(end_silence_ms=end_silence_ms) if endpointing else None
+        self.background_processing = background_processing
+        self.stage_logger = stage_logger or (lambda stage, metrics: None)
         self._input = bytearray()
         self._input_rate = 48_000
+        self._audio_started = False
         self.dropped_output = 0
+        self.dropped_input = 0
         self._closed = False
         self._lock = threading.Lock()
+        self._worker = threading.Thread(target=self._worker_loop, daemon=True) if background_processing else None
+        if self._worker:
+            self._worker.start()
+
+    def _worker_loop(self) -> None:
+        while True:
+            item = self.input_queue.get()
+            if item is None:
+                return
+            self._emit(*item)
 
     def _emit(self, pcm: bytes, sample_rate: int) -> None:
+        if self._closed:
+            return
+        self.stage_logger("utterance_ready", {"duration_ms": round(len(pcm) / max(1, sample_rate * 2) * 1000, 2)})
         for output_pcm in self.processor.process_utterance(pcm, sample_rate):
-            if not output_pcm:
+            if not output_pcm or self._closed:
                 continue
             try:
                 self.output.put_nowait((bytes(output_pcm), 48_000))
+                self.stage_logger("outbound_audio_started", {"chunks": self.output.qsize()})
             except queue.Full:
                 self.dropped_output += 1
+
+    def _submit(self, pcm: bytes, sample_rate: int) -> None:
+        if not self.background_processing:
+            self._emit(pcm, sample_rate)
+            return
+        try:
+            self.input_queue.put_nowait((pcm, sample_rate))
+        except queue.Full:
+            self.dropped_input += 1
 
     def on_pcm(self, pcm: bytes, sample_rate: int) -> None:
         if not pcm or self._closed:
             return
+        if not self._audio_started:
+            self._audio_started = True
+            self.stage_logger("inbound_audio_started", {"sample_rate": sample_rate})
+        if self.endpoint is not None:
+            for utterance in self.endpoint.push(pcm, sample_rate):
+                self._submit(utterance, sample_rate)
+            return
         if self.min_utterance_ms <= 0:
-            self._emit(pcm, sample_rate)
+            self._submit(pcm, sample_rate)
             return
         self._input_rate = sample_rate
         self._input.extend(pcm)
@@ -163,17 +262,23 @@ class DuplexVoiceBridge:
         while len(self._input) >= threshold and not self._closed:
             chunk = bytes(self._input[:threshold])
             del self._input[:threshold]
-            self._emit(chunk, sample_rate)
+            self._submit(chunk, sample_rate)
 
     def flush(self) -> None:
+        if self.endpoint is not None:
+            for utterance in self.endpoint.flush():
+                self._submit(utterance, self._input_rate)
+            return
         if self._input and not self._closed:
             chunk = bytes(self._input)
             self._input.clear()
-            self._emit(chunk, self._input_rate)
+            self._submit(chunk, self._input_rate)
 
     def next_output(self, timeout: float = 0.1) -> tuple[bytes, int] | None:
         try:
-            return self.output.get(timeout=timeout)
+            item = self.output.get(timeout=timeout)
+            self.stage_logger("outbound_audio_completed", {"queue_depth": self.output.qsize()})
+            return item
         except queue.Empty:
             return None
 
@@ -185,16 +290,42 @@ class DuplexVoiceBridge:
                     self.output.get_nowait()
                 except queue.Empty:
                     break
+            if self._worker:
+                try:
+                    self.input_queue.put_nowait(None)
+                except queue.Full:
+                    pass
+        if self._worker:
+            self._worker.join(timeout=5)
+
+
+async def consume_remote_audio_track(track, listeners: Iterable[Callable[[bytes, int], None]]) -> None:
+    """Consume aiortc audio until normal remote closure without an unhandled task."""
+    try:
+        while True:
+            frame = await track.recv()
+            pcm = frame.to_ndarray().tobytes()
+            for listener in listeners:
+                listener(pcm, frame.sample_rate or 48_000)
+    except Exception as exc:
+        try:
+            from aiortc.mediastreams import MediaStreamError
+        except ImportError:
+            MediaStreamError = ()
+        if MediaStreamError and isinstance(exc, MediaStreamError):
+            return
+        raise
 
 
 class LiveCallingCoordinator:
     """Accepts a verified normalized connect and attaches the duplex bridge."""
 
-    def __init__(self, adapter: WhatsAppCallingAdapter, client: MetaCallingClient, endpoint_factory: Callable[[], WebRtcEndpoint], voice: DuplexVoiceBridge):
+    def __init__(self, adapter: WhatsAppCallingAdapter, client: MetaCallingClient, endpoint_factory: Callable[[], WebRtcEndpoint], voice: DuplexVoiceBridge, stage_logger: Callable[[str, dict], None] | None = None):
         self.adapter = adapter
         self.client = client
         self.endpoint_factory = endpoint_factory
         self.voice = voice
+        self.stage_logger = stage_logger or (lambda stage, metrics: None)
         self.endpoints: dict[str, WebRtcEndpoint] = {}
         self._workers: dict[str, threading.Thread] = {}
 
@@ -242,6 +373,7 @@ class LiveCallingCoordinator:
             endpoint.close()
         self.voice.flush()
         self.voice.close()
+        self.stage_logger("teardown_complete", {})
         return result
 
 
@@ -260,13 +392,24 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
         def __init__(self):
             super().__init__()
             self.frames: queue.Queue[tuple[bytes, int]] = queue.Queue(maxsize=64)
+            self.pending = bytearray()
             self.samples = 0
 
         async def recv(self):
             import asyncio
-            pcm, rate = await asyncio.to_thread(self.frames.get)
-            frame = AudioFrame(format="s16", layout="mono", samples=len(pcm) // 2)
-            frame.sample_rate = rate
+            frame_bytes = 960 * 2
+            while len(self.pending) < frame_bytes:
+                try:
+                    pcm, rate = await asyncio.wait_for(asyncio.to_thread(self.frames.get), timeout=0.02)
+                except asyncio.TimeoutError:
+                    pcm, rate = b"\x00" * frame_bytes, 48_000
+                if rate != 48_000:
+                    raise MediaContractError("outbound WebRTC PCM must be 48 kHz")
+                self.pending.extend(pcm)
+            pcm = bytes(self.pending[:frame_bytes])
+            del self.pending[:frame_bytes]
+            frame = AudioFrame(format="s16", layout="mono", samples=960)
+            frame.sample_rate = 48_000
             frame.planes[0].update(pcm)
             frame.pts = self.samples
             frame.time_base = __import__("fractions").Fraction(1, rate)
@@ -297,14 +440,8 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
             def on_track(track):
                 if track.kind != "audio":
                     return
-                async def consume():
-                    while True:
-                        frame = await track.recv()
-                        pcm = frame.to_ndarray().tobytes()
-                        for listener in self.listeners:
-                            listener(pcm, frame.sample_rate or 48_000)
                 import asyncio
-                asyncio.create_task(consume())
+                asyncio.create_task(consume_remote_audio_track(track, self.listeners))
 
         def answer(self, offer_sdp: str) -> str:
             async def negotiate():

@@ -65,6 +65,12 @@ def redacted_event_log(kind: str, status: str) -> str:
     return f"calling_event timestamp={timestamp} kind={kind} status={status}"
 
 
+def redacted_stage_log(stage: str, metrics: dict) -> None:
+    allowed = {key: value for key, value in metrics.items() if key in {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate"} and isinstance(value, (int, float))}
+    suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
+    logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
+
+
 def create_live_event_handler(coordinator: LiveCallingCoordinator):
     """Dispatch normalized events after webhook signature validation and parsing."""
     def handle(event: dict) -> dict:
@@ -108,10 +114,10 @@ def build_live_coordinator() -> LiveCallingCoordinator:
     horus = LocalHorusPythonPort(os.environ["HORUS_ROOT"])
     runtime = _IngressRuntime(horus)
     adapter = WhatsAppCallingAdapter(runtime)
-    processor = PipelineVoiceTurnProcessor("pending", transcriber, horus, synthesize, tts_sample_rate=tts_rate)
-    bridge = DuplexVoiceBridge(processor, max_output_chunks=64, min_utterance_ms=800)
+    processor = PipelineVoiceTurnProcessor("pending", transcriber, horus, synthesize, tts_sample_rate=tts_rate, stage_logger=redacted_stage_log)
+    bridge = DuplexVoiceBridge(processor, max_output_chunks=64, background_processing=True, stage_logger=redacted_stage_log, endpointing=True, end_silence_ms=240)
     client = MetaCallingClient(os.environ["WHATSAPP_ACCESS_TOKEN"], api_version=os.environ.get("META_API_VERSION", "v26.0"))
-    return LiveCallingCoordinator(adapter, client, aiortc_endpoint_factory, bridge)
+    return LiveCallingCoordinator(adapter, client, aiortc_endpoint_factory, bridge, stage_logger=redacted_stage_log)
 
 
 # Import-safe ingress object; live handler is attached only in main().

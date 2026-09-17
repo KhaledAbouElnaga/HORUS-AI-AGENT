@@ -1,3 +1,7 @@
+import asyncio
+
+from aiortc.mediastreams import MediaStreamError
+
 from horus_local_voice.whatsapp_calling import WhatsAppCallingAdapter
 from horus_local_voice.whatsapp_media import (
     CallAction, DuplexVoiceBridge, LiveCallingCoordinator, MetaCallingClient,
@@ -104,6 +108,50 @@ def test_runnable_entrypoint_installs_live_media_handler(monkeypatch):
 
     processor = PipelineVoiceTurnProcessor("session", Transcriber(), Runtime(), lambda text: text.encode())
     assert list(processor.process_utterance(b"audio", 16_000)) == [b"reply."]
+
+
+
+
+def test_vad_accumulates_until_silence_boundary():
+    from horus_local_voice.whatsapp_media import VadEndpointAccumulator
+    vad = VadEndpointAccumulator(end_silence_ms=60)
+    sequence = iter([True] * 3 + [False] * 4)
+    vad.vad.is_speech = lambda frame, rate: next(sequence)
+    frame = bytes([1, 0]) * 960
+    completed = []
+    for _ in range(7):
+        completed.extend(vad.push(frame, 48_000))
+    assert len(completed) == 1
+    assert len(completed[0]) == 6 * len(frame)
+
+
+def test_vad_flushes_open_utterance_without_waiting_for_more_rtp():
+    from horus_local_voice.whatsapp_media import VadEndpointAccumulator
+    vad = VadEndpointAccumulator()
+    vad.vad.is_speech = lambda frame, rate: True
+    frame = bytes([1, 0]) * 960
+    vad.push(frame, 48_000)
+    assert vad.flush() == [frame]
+
+
+def test_media_stream_error_is_normal_track_closure():
+    from horus_local_voice.whatsapp_media import consume_remote_audio_track
+    class Track:
+        async def recv(self): raise MediaStreamError()
+    asyncio.run(consume_remote_audio_track(Track(), []))
+
+
+def test_hangup_during_processing_discards_stale_output():
+    import threading
+    started = threading.Event(); release = threading.Event()
+    class Slow:
+        def process_utterance(self, pcm, rate):
+            started.set(); release.wait(2); return [b"stale"]
+    bridge = DuplexVoiceBridge(Slow(), background_processing=True)
+    bridge.on_pcm(b"input", 48_000)
+    assert started.wait(1)
+    bridge.close(); release.set()
+    assert bridge.next_output(timeout=0.3) is None
 
 
 def test_duplex_bridge_is_bounded_and_closes_output():
