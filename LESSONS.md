@@ -21,3 +21,4 @@
 - Full-duplex evidence requires simultaneous live input and non-zero output; sequential capture after silent playback only proves device access, not barge-in. Keep callback-silence and physical stream-stop latency separate.
 - Do not place a late-context assertion on an intentionally cancelled turn; keep interruption coverage and recall coverage independently observable.
 - Treat an external runtime as unavailable until a real transport is configured; an adapter must fail closed rather than silently substituting a deterministic demo.
+- The deployed HORUS Worker exposes Telegram-only ingress and Telegram egress; source-level KV/tool discovery is not execution evidence. Keep the M5 transport gate explicit until a callable session API exists.

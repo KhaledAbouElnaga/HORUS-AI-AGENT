@@ -82,3 +82,18 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | M4-10 | PASS | Streaming state/lifecycle/stale-event regression coverage; 31-test suite passes |
 | M4-11 | PASS | 10 true overlapping live duplex trials with non-zero Piper output and live microphone callback; injected speech-start stopped output p95 230.4233 ms, callback silence p95 0.0234 ms, 0 stale samples; acoustic speech detection/subjective quality NOT MEASURED |
 | M4-12 | PASS | Required M4 reports and exact raw artifact paths recorded; no provider/billing/credential changes |
+
+## Milestone 5 evidence
+
+| ID | Result | Evidence |
+|---|---|---|
+| M5-01 | PASS | Real HORUS contract discovered in external `D:/HORUS/horus-core/worker/src/index.js`; entrypoints, KV keys, LLM loop, and weather/Wikipedia paths documented |
+| M5-02 | PASS | `VoiceRuntimeAdapter` and WAV coordinator delegate session, stream, memory, tools, cancellation, and TTS; no fake default runtime |
+| M5-03 | BLOCKED | Worker exposes Telegram-only ingress/egress and no callable local streaming runtime API; known `/health` probe returned HTTP 403 |
+| M5-04 | PASS / BLOCKED | Local adapter session isolation and memory/tool seams tested; real three-fact continuity requires blocked transport |
+| M5-05 | PASS / BLOCKED | Deny-by-default mutation safety passes locally; three real tool categories and read-only external execution blocked by runtime transport |
+| M5-06 | PASS / BLOCKED | Deterministic WAV coordinator exists and live device probe ran; integrated live runtime path blocked (input probe host error, output probe PASS) |
+| M5-07 | BLOCKED | Required 50-turn/15-minute real integrated run cannot execute without callable HORUS transport |
+| M5-08 | PASS / NOT MEASURED | Local failure/recovery seams tested; integrated runtime failure matrix and required M5 latency/RSS drift not measured |
+| M5-09 | PASS | Full local regression and compile checks pass; tracked-file secret scan and diff check recorded in PR evidence |
+| M5-10 | BLOCKED | M5 reports are complete with exact PASS/PARTIAL/BLOCKED/NOT MEASURED states; external runtime integration remains the gate |
