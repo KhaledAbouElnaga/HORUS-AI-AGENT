@@ -17,4 +17,10 @@ Sources: [Calling](https://developers.facebook.com/docs/whatsapp/cloud-api/calli
 | Business-initiated zero-billing use | **BLOCKED — documented payment/pricing gate** |
 | Private WhatsApp Web/protocol automation | **REJECTED — unsupported and not used** |
 
-The exact Meta webhook payload/media negotiation for this account is not inferred from public navigation. The adapter consumes a deliberately normalized internal envelope until official account payloads are available.
+## Prepared non-SIP webhook workflow
+
+- Callback path: `POST /webhooks/whatsapp/calling` (and Meta verification `GET` on the same path).
+- Verification fields: `hub.mode=subscribe`, `hub.verify_token`, and `hub.challenge`; successful verification returns the challenge verbatim.
+- Runtime config source: `WHATSAPP_WEBHOOK_VERIFY_TOKEN` (secret value is not committed or logged).
+- POST authenticity: validate `X-Hub-Signature-256` using the Meta app secret before parsing or invoking HORUS; the app secret is never stored in this repository.
+- The endpoint is framework-neutral and is not deployed or connected to production by this change.
