@@ -138,4 +138,7 @@ class VoiceRuntimeAdapter:
         self.session(session_id)
         if not self.safety.allowed(category, arguments):
             raise PermissionError(f"tool denied by fail-closed policy: {category}")
-        return self.runtime.invoke_tool(session_id, category, arguments)
+        result = self.runtime.invoke_tool(session_id, category, arguments)
+        if not isinstance(result, (str, dict, list, tuple)):
+            raise RuntimeError(f"malformed tool result rejected: {type(result).__name__}")
+        return result

@@ -1,21 +1,34 @@
 # M5 Failure and Recovery Report
 
-## Executed local matrix
+## Active M5 failure matrix
 
-| Injection | State | Evidence |
+Command: `PYTHONPATH=src python scripts/run_m5_failure_matrix.py`
+
+| Injection | State | Recovery / stale output |
 |---|---|---|
-| runtime exception/unavailable | PASS | `UnconfiguredRuntime` raises `RuntimeUnavailable`; no fallback success fabricated |
-| memory read failure | PASS at adapter boundary | transport exception propagates without fabricated memory |
-| memory write/update failure | PASS at adapter boundary | transport exception propagates without fabricated write |
-| tool exception/timeout/malformed result | PASS at adapter boundary | deny-by-default prevents unregistered delegation |
-| cancellation before turn | PASS | generation/epoch rejection prevents any downstream TTS emission |
-| cancellation after tool result | PASS / PARTIAL | five post-turn cancellation calls in sustained run; stale audio count 0; native mid-stream cancellation unavailable |
-| TTS failure | PASS at M4 bounded adapter | failure returns fail-closed result |
-| session restart/reconnect | PASS | `resume_session()` clears cancellation and continues the same local session |
-| queue overload/backpressure | PASS at M4 boundary | existing bounded ingress tests cover explicit drops |
+| runtime unavailable/exception | PASS | fails closed with `RuntimeUnavailable` / `RuntimeError`; stale 0 |
+| memory read failure | PASS | exception propagates; real retry path; stale 0 |
+| memory write/update failure | PASS | exception propagates; no fabricated write; stale 0 |
+| tool timeout | PASS | exception propagates; real retry path; stale 0 |
+| tool exception | PASS | exception propagates; stale 0 |
+| malformed tool result | PASS | adapter rejects `object`; stale 0 |
+| cancellation during/after tool result | PASS / PARTIAL | `RuntimeCancelled`; no downstream output; native mid-stream timing unavailable |
+| TTS failure | PASS | failed emission discarded and real response retry succeeds; stale 0 |
+| session restart/reconnect | PASS | `resume_session()` clears cancellation and real `/status` succeeds |
+| queue overload/backpressure | PASS | bounded ingress drops newest chunk explicitly; no stale output |
 
-The sustained run executed 50 turns, 45 real tool turns, five cancellation calls, two sessions, and Piper output for every response. The integrated native cancellation row remains **PARTIAL** because `app.core.agent.handle_text()` is synchronous at response level.
+## Three real recovery events in the integrated local path
 
-## Not executed
+Artifact: `artifacts/m5_recovery_events.json`, command: `PYTHONPATH=src python scripts/run_m5_recovery_events.py`.
 
-Worker Telegram transport, production KV, provider-backed arbitrary turns, external weather/Wikipedia calls, and destructive actions were not invoked. No credentials, billing, providers, Meta/WhatsApp, or deployment configuration changed.
+| Turn | Injected failure | Component | Recovery behavior | Stale output |
+|---:|---|---|---|---:|
+| 12 | memory read failure | memory | restore real port and retry succeeded | 0 |
+| 24 | tool timeout | real tool path | restore real port and retry succeeded | 0 |
+| 36 | TTS failure | Piper output sink | discard failed emission and retry real response | 0 |
+
+All three recovery events passed. The 50-turn run separately recorded five cancellation calls with stale audio count 0. Native first-token and true mid-response cancellation remain **NOT MEASURED/PARTIAL** because the installed agent returns completed responses.
+
+## External tool boundary
+
+A real local Worker was started and its `/health` and `/cost` routes were callable during discovery. Weather/Wikipedia are source-discovered Worker tools, but the deployed Worker ingress is Telegram-oriented and no safe local voice/session route exists. Executing them through production would require a Telegram side effect; therefore external weather/Wikipedia execution remains **BLOCKED/PARTIAL**, with no credentials or messages used.

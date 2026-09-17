@@ -22,6 +22,10 @@ The run decoded every input WAV with the real faster-whisper `tiny/int8` path, p
 | User-end → first audio p95 | **3,553.642 ms** |
 | Tool intent → tool result p95 | **11.46 ms** |
 
+## Recovery events
+
+Three active recovery injections were executed in the same local runtime path (turns 12/24/36): memory read failure → real retry; tool timeout → real retry; Piper TTS failure → discard and retry. Each recovered with stale output 0. Full matrix: `artifacts/m5_failure_matrix.json`; event artifact: `artifacts/m5_recovery_events.json`.
+
 Artifact: `artifacts/m5_sustained_local.json` (ignored generated evidence). Native first-token latency is **NOT MEASURED** because the installed HORUS agent returns complete responses.
 
 ## Boundary

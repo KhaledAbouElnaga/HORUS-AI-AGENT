@@ -97,3 +97,4 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | M5-08 | PASS / PARTIAL | Local adapter/M4 failure seams pass; five post-turn cancellation calls produced zero stale audio; native runtime failure/cancellation matrix is partial |
 | M5-09 | PASS | Full local regression, compileall, tracked-file secret scan, and diff check pass |
 | M5-10 | PARTIAL | Reports contain exact PASS/PARTIAL/BLOCKED/NOT MEASURED states; Roadmap step 6 is not complete pending native runtime streaming/cancellation and external tool transport |
+| M5-11 | PASS | Authoritative artifact latency: response-ready 21.027 ms p95; response-ready→first-audio 213.577 ms p95; user-end→first-audio 3,553.642 ms p95; tool result 11.46 ms p95; memory lookup/update 1.005/0.693 ms; RSS 502.98→732.59 MB (+229.61 MB) |
