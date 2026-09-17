@@ -82,3 +82,19 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | M4-10 | PASS | Streaming state/lifecycle/stale-event regression coverage; 31-test suite passes |
 | M4-11 | PASS | 10 true overlapping live duplex trials with non-zero Piper output and live microphone callback; injected speech-start stopped output p95 230.4233 ms, callback silence p95 0.0234 ms, 0 stale samples; acoustic speech detection/subjective quality NOT MEASURED |
 | M4-12 | PASS | Required M4 reports and exact raw artifact paths recorded; no provider/billing/credential changes |
+
+## Milestone 5 evidence
+
+| ID | Result | Evidence |
+|---|---|---|
+| M5-01 | PASS | Real HORUS contract discovered in `D:/HORUS/horus-core/app` and `worker/src/index.js`; local FastAPI/Worker entrypoints, KV keys, agent loop, and tool paths documented |
+| M5-02 | PASS / PARTIAL | `LocalHorusPythonPort` calls the installed HORUS agent, memory, and task modules; real WAV coordinator reaches the port; native response streaming/cancellation remains unavailable |
+| M5-03 | PASS / PARTIAL | Local Python HORUS core and normal `wrangler dev --local` Worker run are callable; Worker remains Telegram-only for turns and has no native local voice stream |
+| M5-04 | PASS / NOT MEASURED | Real local memory: 3 facts, correction, late recall, and 2-session isolation passed; production Worker KV continuity not measured |
+| M5-05 | PASS / PARTIAL | 45 real spoken tool turns exercised `/status`, `/tasks`, and `/cost`; Worker weather/Wikipedia external tools not executed; mutation deny-by-default passes |
+| M5-06 | PASS / PARTIAL | Real WAV/STT/HORUS/Piper command path executed for 50 turns; native live input probe had PortAudio host error and native runtime voice stream is unavailable |
+| M5-07 | PASS / PARTIAL | 50/50 local integrated turns executed; native token streaming, provider-backed arbitrary turns, and true mid-response barge-in remain unavailable |
+| M5-08 | PASS | Active M5 failure matrix covers runtime unavailable/exception, memory read/write, tool timeout/exception/malformed result, cancellation, TTS, session restart, and queue overload; all recovered or failed closed with stale output 0. Three real recovery events PASS at turns 12 (memory read → retry), 24 (tool timeout → retry), and 36 (TTS failure → discard/retry). Native mid-response cancellation remains PARTIAL. |
+| M5-09 | PASS | Full local regression, compileall, tracked-file secret scan, and diff check pass |
+| M5-10 | PASS | Local M5 milestone acceptance is satisfied and final-review ready. Native token streaming/true mid-response cancellation remain PARTIAL/NOT MEASURED; deployed Worker external voice transport remains BLOCKED; bilingual decoded quality remains NOT MEASURED. |
+| M5-11 | PASS | Authoritative artifact latency: response-ready 21.027 ms p95; response-ready→first-audio 213.577 ms p95; user-end→first-audio 3,553.642 ms p95; tool result 11.46 ms p95; memory lookup/update 1.005/0.693 ms; RSS 502.98→732.59 MB (+229.61 MB) |

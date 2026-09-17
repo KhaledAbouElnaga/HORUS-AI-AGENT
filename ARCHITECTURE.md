@@ -59,6 +59,12 @@ Use bounded queues, cancellation propagation, idempotent event handling, reconne
 
 The measured policy selects faster-whisper `base/int8/forced-Arabic/beam5` for Egyptian, MSA, and the Arabic-led synthetic mixed fixture, while English uses auto-detection. WebRTC VAD replaces the earlier energy gate. Qwen2.5-1.5B Q4_K_M through llama.cpp is the selected experimental agent after passing turn-10 context and 16/20 schema actions; the boundary remains replaceable. Piper routes English replies to `en_US-lessac-medium`, Arabic replies to `ar_JO-kareem-medium`, and mixed replies by dominant output script with an Arabic tie-break. The system instruction is prepended outside the bounded rolling conversation window.
 
+## Milestone 5 integration boundary
+
+The deployed HORUS runtime discovered for M5 is `D:/HORUS/horus-core/worker/src/index.js`, a Cloudflare Worker whose public entrypoints are `/health`, `/cost`, and the Telegram-only `POST /webhook/telegram`. Its session context and durable facts are implemented in Worker KV keys (`ctx:<user-id>` and `facts:<user-id>`), and its currently exercised safe data paths are the in-worker weather and Wikipedia handlers. It has no local callable streaming-runtime API, and this repository cannot access its secrets or mutate its deployment without crossing the issue's protected-system boundary.
+
+`src/horus_local_voice/runtime_adapter.py` now defines the explicit `RuntimePort` required to connect those real capabilities later. It owns local session identity, memory delegation, streamed-token cancellation/stale rejection, and deny-by-default tool safety; `UnconfiguredRuntime` fails closed instead of faking an integration. A transport implementation must be added only when a real callable HORUS runtime contract is available.
+
 ## Sources
 
 [1] https://developers.facebook.com/docs/whatsapp/cloud-api/calling

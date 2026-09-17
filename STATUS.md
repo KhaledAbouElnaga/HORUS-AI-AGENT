@@ -1,12 +1,13 @@
 # Status
 
-- **Current milestone:** Milestone 4 — streaming local voice loop and measured latency/language robustness; PR #11 review corrections executed.
-- **Implementation:** 30 ms bounded audio ingress, WebRTC VAD/endpointing, genuine multi-hypothesis chunk-fed STT, streamed Qwen output, incremental Piper phrase synthesis, monotonic cancellation, stale-event rejection, explicit Arabic/English routing, and session lifecycle recovery.
-- **Chunk-fed STT evidence:** two `base/int8` candidates × 20 turns after warm-up; each produced 60 partial hypotheses and every turn had multiple partials. Selected candidate first-partial-after-availability p95 2,211.84 ms, final p95 1,984.23 ms, mean WER 0.4455, 0 queue drops.
-- **Sustained evidence:** 50 consecutive fresh full-pipeline turns, 150 partials, 5 interruptions, 3 recoveries, late pinned-memory recall PASS, 0 drops/duplicates/stale events/cancel failures. RSS 1,688.88→2,140.57 MB; STT-total p95 3,607.24→3,609.86 ms; agent first-token p95 1,332.59→1,402.96 ms.
-- **Live duplex evidence:** 10/10 overlapping Windows input/output trials with active non-zero Piper speech. Injected speech-start while microphone callback was active produced callback-silence p95 0.0234 ms and physical stream-stop p95 230.4233 ms; 0 stale output samples; no raw microphone audio retained.
-- **Failure evidence:** focused 9/9 failure/recovery runner plus earlier 11-case suite fail closed.
-- **Regression:** 31 tests pass; compileall, artifact acceptance assertions, secret scan, and `git diff --check` pass.
-- **Measured limitations:** M4 still does not beat M3 aggregate latency; RSS grew 451.69 MB across the full-pipeline run; full-pipeline tiny STT mean WER was 0.6321; patient-600ms endpointing (11/40 false cuts) uses a 600 ms end-silence window; natural Egyptian/code-switch and acoustic echo/human interruption quality remain NOT MEASURED.
-- **Next action:** update PR #11 on the same branch, post exact review-ready results, and await ChatGPT review. Do not merge.
-- **Human input required:** None. Meta/WhatsApp, paid/billing, credentials, existing HORUS providers/routing, and unrelated systems remain untouched.
+- **Current milestone:** Milestone 5 — local runtime integration **FINAL-REVIEW READY**.
+- **Runtime:** `LocalHorusPythonPort` calls the installed `D:/HORUS/horus-core/app` agent, memory store, and task engine. The Worker local-dev path also ran via `wrangler dev --local`; no production changes.
+- **Voice path:** 50 real WAV turns decoded by faster-whisper `tiny/int8`, routed through the real local HORUS command/memory paths, and synthesized by Piper. No cached transcripts were injected.
+- **Memory:** 3 early facts, location correction, late recall, and two-session isolation PASS; late corrected value was `keys` as actually decoded by STT.
+- **Tools:** 45 real spoken tool turns across `/status`, `/tasks`, and `/cost`; deny-by-default mutation safety PASS.
+- **Sustained evidence:** 50/50 turns, 5 cancellation calls, stale audio after cancel 0, RSS 502.98→732.59 MB (+229.61 MB); runtime-response-ready p95 21.027 ms; response-ready→first-audio p95 213.577 ms; user-end→first-audio p95 3,553.642 ms; tool intent→result p95 11.46 ms.
+- **Native streaming:** PARTIAL — installed Python agent returns complete responses; native first-token and mid-response cancellation remain NOT MEASURED.
+- **Mixed language:** concatenated Arabic+English input was exercised, but bilingual decoded-text quality remains NOT MEASURED.
+- **Regression:** 41 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
+- **Safety:** No credentials, billing, provider, Meta/WhatsApp, deployment, or unrelated-system changes.
+- **Next action:** final ChatGPT review. Native streamed/cancellable runtime, deployed Worker voice transport, bilingual decoded quality, and provider-backed arbitrary turns remain explicitly PARTIAL / BLOCKED / NOT MEASURED. PR #13 remains open; do not merge.
