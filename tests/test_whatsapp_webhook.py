@@ -61,6 +61,13 @@ def test_meta_dashboard_calls_sample_parses_connect_and_terminate():
     assert events[0]["kind"] == "hangup"
 
 
+def test_runner_log_is_redacted_to_timestamp_kind_and_status():
+    from scripts.run_whatsapp_webhook_server import redacted_event_log
+    line = redacted_event_log("incoming", "accepted")
+    assert "timestamp=" in line and "kind=incoming" in line and "status=accepted" in line
+    assert not any(secret in line for secret in ("call-", "user-", "phone-", "sdp", "SDP", "sha256"))
+
+
 def test_meta_parser_runs_only_after_signature_validation():
     called = []
     webhook = WhatsAppCallingWebhook(WhatsAppCallingAdapter(Runtime()), lambda p: called.append(p) or [])

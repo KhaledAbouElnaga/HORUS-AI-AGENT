@@ -9,7 +9,8 @@
 - On hangup increments the generation, cancels the HORUS session, and closes it; no response media is emitted by this boundary after teardown.
 - Counts duplicate/stale events and returns only redacted observations; identifiers and payloads are not retained in observability.
 - Identity mismatch: an existing `call_id` with a different `user_id` or `phone_number_id` returns `contract_mismatch`, increments stale/mismatch counters, and performs no runtime/media action.
-- Leaves STT, HORUS memory/tools, TTS, and cancellation implementation with the existing runtime port rather than reimplementing them.
+- The local runner emits only UTC timestamp, normalized event kind, and status (`accepted`, `stale`, `duplicate`, or `contract_mismatch`); call/user/phone IDs, SDP, payloads, and secrets are never logged.
+- STT, HORUS memory/tools, TTS, and cancellation remain delegated to the existing runtime port rather than reimplemented.
 
 ## Evidence state
 

@@ -127,4 +127,4 @@ class WhatsAppCallingWebhook:
         envelopes = self.event_parser(payload)
         if not isinstance(envelopes, list):
             raise WebhookPayloadError("event parser must return a list")
-        return [self.adapter.ingest(event) for event in envelopes]
+        return [{"kind": event["kind"], **self.adapter.ingest(event)} for event in envelopes]

@@ -7,7 +7,9 @@ prints them.
 from __future__ import annotations
 
 import json
+import logging
 import os
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -28,6 +30,14 @@ def _parser(payload: dict) -> list[dict]:
 
 adapter = WhatsAppCallingAdapter(_Runtime())
 webhook = WhatsAppCallingWebhook(adapter, _parser)
+logger = logging.getLogger("whatsapp_calling_webhook")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+
+def redacted_event_log(kind: str, status: str) -> str:
+    """Return the only event fields permitted in runner logs."""
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return f"calling_event timestamp={timestamp} kind={kind} status={status}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -57,14 +67,18 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         try:
-            webhook.receive_post(
+            results = webhook.receive_post(
                 body,
                 self.headers.get("X-Hub-Signature-256"),
                 os.environ["META_APP_SECRET"],
             )
         except Exception:
+            # Signature/payload failures have no normalized event kind.
+            logger.info(redacted_event_log("unparsed", "contract_mismatch"))
             self.send_error(403)
             return
+        for result in results:
+            logger.info(redacted_event_log(result["kind"], result["status"]))
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"EVENT_RECEIVED")
