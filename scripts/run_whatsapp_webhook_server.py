@@ -66,7 +66,7 @@ def redacted_event_log(kind: str, status: str) -> str:
 
 
 def redacted_stage_log(stage: str, metrics: dict) -> None:
-    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type"}
+    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec"}
     allowed = {key: value for key, value in metrics.items() if key in allowed_keys and isinstance(value, (int, float, str))}
     suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
     logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
@@ -118,7 +118,7 @@ def build_live_coordinator() -> LiveCallingCoordinator:
     processor = PipelineVoiceTurnProcessor("pending", transcriber, horus, synthesize, tts_sample_rate=tts_rate, stage_logger=redacted_stage_log)
     bridge = DuplexVoiceBridge(processor, max_output_chunks=64, background_processing=True, stage_logger=redacted_stage_log, endpointing=True, end_silence_ms=240)
     client = MetaCallingClient(os.environ["WHATSAPP_ACCESS_TOKEN"], api_version=os.environ.get("META_API_VERSION", "v26.0"))
-    return LiveCallingCoordinator(adapter, client, aiortc_endpoint_factory, bridge, stage_logger=redacted_stage_log)
+    return LiveCallingCoordinator(adapter, client, lambda: aiortc_endpoint_factory(redacted_stage_log), bridge, stage_logger=redacted_stage_log)
 
 
 # Import-safe ingress object; live handler is attached only in main().

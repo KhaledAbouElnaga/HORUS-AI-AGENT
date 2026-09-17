@@ -4,7 +4,7 @@ from aiortc.mediastreams import MediaStreamError
 
 from horus_local_voice.whatsapp_calling import WhatsAppCallingAdapter
 from horus_local_voice.whatsapp_media import (
-    CallAction, DuplexVoiceBridge, LiveCallingCoordinator, MetaCallingClient,
+    CallAction, DuplexVoiceBridge, LiveCallingCoordinator, MediaContractError, MetaCallingClient,
     PipelineVoiceTurnProcessor, aiortc_endpoint_factory,
 )
 
@@ -240,3 +240,205 @@ def test_aiortc_endpoint_close_is_idempotent():
     endpoint.close()
     endpoint.close()
     assert not endpoint.thread.is_alive()
+
+
+def test_output_track_delivers_pcm_immediately_after_silence_timeouts():
+    endpoint = aiortc_endpoint_factory()
+    loop = asyncio.new_event_loop()
+    marker = (b"\x34\x12" * 960)
+    try:
+        async def receive_after_silence():
+            for _ in range(4):
+                silence = await endpoint.out.recv()
+                assert bytes(silence.planes[0]) == b"\x00" * 1920
+            endpoint.queue_pcm(marker, 48_000)
+            return await endpoint.out.recv()
+
+        frame = loop.run_until_complete(receive_after_silence())
+        assert bytes(frame.planes[0]) == marker
+    finally:
+        # Release abandoned executor Queue.get calls in the buggy implementation
+        # so the RED test exits cleanly instead of leaking its repro threads.
+        for _ in range(8):
+            try:
+                endpoint.out.frames.put_nowait((b"\x00" * 1920, 48_000))
+            except Exception:
+                break
+        endpoint.close()
+        loop.close()
+
+
+def test_output_track_preserves_multiframe_pcm_format_and_timestamps():
+    endpoint = aiortc_endpoint_factory()
+    loop = asyncio.new_event_loop()
+    first = b"\x11\x00" * 960
+    second = b"\x22\x00" * 960
+    try:
+        endpoint.queue_pcm(first + second, 48_000)
+
+        async def receive_two():
+            return await endpoint.out.recv(), await endpoint.out.recv()
+
+        frame1, frame2 = loop.run_until_complete(receive_two())
+        assert bytes(frame1.planes[0]) == first
+        assert bytes(frame2.planes[0]) == second
+        assert frame1.format.name == frame2.format.name == "s16"
+        assert frame1.layout.name == frame2.layout.name == "mono"
+        assert frame1.samples == frame2.samples == 960
+        assert frame1.sample_rate == frame2.sample_rate == 48_000
+        assert (frame1.pts, frame2.pts) == (0, 960)
+        assert str(frame1.time_base) == str(frame2.time_base) == "1/48000"
+    finally:
+        endpoint.close()
+        loop.close()
+
+
+def test_output_track_paces_frames_at_twenty_milliseconds():
+    endpoint = aiortc_endpoint_factory()
+    loop = asyncio.new_event_loop()
+    try:
+        async def receive_four():
+            started = loop.time()
+            for _ in range(4):
+                await endpoint.out.recv()
+            return loop.time() - started
+
+        elapsed = loop.run_until_complete(receive_four())
+        assert 0.045 <= elapsed < 0.25
+    finally:
+        endpoint.close()
+        loop.close()
+
+
+def test_output_track_logs_queue_placement_separately_from_track_consumption():
+    events = []
+    endpoint = aiortc_endpoint_factory(stage_logger=lambda stage, metrics: events.append((stage, metrics)))
+    loop = asyncio.new_event_loop()
+    try:
+        endpoint.queue_pcm(b"\x01\x00" * 960, 48_000)
+        assert [stage for stage, _ in events] == ["outbound_pcm_placed"]
+        loop.run_until_complete(endpoint.out.recv())
+        assert [stage for stage, _ in events] == ["outbound_pcm_placed", "outbound_pcm_consumed"]
+    finally:
+        endpoint.close()
+        loop.close()
+
+
+def test_output_track_telemetry_failure_cannot_interrupt_pcm_delivery():
+    def broken_logger(stage, metrics):
+        raise RuntimeError("telemetry unavailable")
+
+    endpoint = aiortc_endpoint_factory(stage_logger=broken_logger)
+    loop = asyncio.new_event_loop()
+    marker = b"\x21\x43" * 960
+    try:
+        endpoint.queue_pcm(marker, 48_000)
+        frame = loop.run_until_complete(endpoint.out.recv())
+        assert bytes(frame.planes[0]) == marker
+    finally:
+        endpoint.close()
+        loop.close()
+
+
+def test_endpoint_rejects_pcm_after_close_without_scheduling_stats():
+    endpoint = aiortc_endpoint_factory()
+    endpoint.close()
+    try:
+        endpoint.queue_pcm(b"\x00\x00" * 960, 48_000)
+    except MediaContractError as exc:
+        assert "closed" in str(exc)
+    else:
+        raise AssertionError("closed endpoint accepted PCM")
+
+
+def test_queue_pcm_overlap_with_close_does_not_raise_closed_loop_error():
+    import threading
+
+    logger_entered = threading.Event()
+    release_logger = threading.Event()
+    errors = []
+
+    def blocking_logger(stage, metrics):
+        if stage == "outbound_pcm_placed":
+            logger_entered.set()
+            release_logger.wait(2)
+
+    endpoint = aiortc_endpoint_factory(stage_logger=blocking_logger)
+
+    def enqueue():
+        try:
+            endpoint.queue_pcm(b"\x22\x11" * 960, 48_000)
+        except Exception as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=enqueue)
+    worker.start()
+    assert logger_entered.wait(1)
+    endpoint.close()
+    release_logger.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert errors == []
+
+
+def test_aiortc_loopback_transmits_nonzero_pcm_and_exposes_sender_stats():
+    from array import array
+    import math
+    import struct
+
+    from aiortc import RTCPeerConnection, RTCSessionDescription
+
+    async def scenario():
+        events = []
+        endpoint = aiortc_endpoint_factory(stage_logger=lambda stage, metrics: events.append((stage, metrics)))
+        remote = RTCPeerConnection()
+        tracks = []
+
+        @remote.on("track")
+        def on_track(track):
+            tracks.append(track)
+
+        try:
+            remote.addTransceiver("audio", direction="recvonly")
+            offer = await remote.createOffer()
+            await remote.setLocalDescription(offer)
+            answer_sdp = await asyncio.to_thread(endpoint.answer, remote.localDescription.sdp)
+            await remote.setRemoteDescription(RTCSessionDescription(sdp=answer_sdp, type="answer"))
+            for _ in range(100):
+                if tracks and remote.connectionState == "connected":
+                    break
+                await asyncio.sleep(0.02)
+            assert tracks and remote.connectionState == "connected"
+
+            baseline_frames = [await asyncio.wait_for(tracks[0].recv(), timeout=1) for _ in range(4)]
+            assert all(not any(frame.to_ndarray().tobytes()) for frame in baseline_frames)
+            baseline = endpoint.sender_stats()
+
+            samples = [int(12_000 * math.sin(2 * math.pi * 440 * index / 48_000)) for index in range(960 * 5)]
+            marker = b"".join(struct.pack("<h", sample) for sample in samples)
+            endpoint.queue_pcm(marker, 48_000)
+            decoded_level = 0
+            for _ in range(20):
+                frame = await asyncio.wait_for(tracks[0].recv(), timeout=1)
+                decoded = array("h")
+                decoded.frombytes(frame.to_ndarray().tobytes())
+                decoded_level = max((abs(sample) for sample in decoded), default=0)
+                if decoded_level > 500:
+                    break
+            assert decoded_level > 500
+
+            media = endpoint.media_state()
+            assert media["direction"] in {"sendonly", "sendrecv"}
+            assert media["codec"] == "opus"
+            stats = endpoint.sender_stats()
+            assert stats["packets_sent"] > baseline["packets_sent"]
+            assert stats["bytes_sent"] > baseline["bytes_sent"]
+            assert any(stage == "outbound_pcm_consumed" for stage, _ in events)
+            return events
+        finally:
+            await remote.close()
+            endpoint.close()
+
+    events = asyncio.run(scenario())
+    assert any(stage == "outbound_media_negotiated" for stage, _ in events)
+    assert any(stage == "outbound_rtp_stats" for stage, _ in events)

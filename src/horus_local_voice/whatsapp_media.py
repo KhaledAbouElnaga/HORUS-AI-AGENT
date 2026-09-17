@@ -32,6 +32,8 @@ class WebRtcEndpoint(Protocol):
     def answer(self, offer_sdp: str) -> str: ...
     def add_pcm_listener(self, listener: Callable[[bytes, int], None]) -> None: ...
     def queue_pcm(self, pcm: bytes, sample_rate: int = 48_000) -> None: ...
+    def media_state(self) -> dict: ...
+    def sender_stats(self) -> dict: ...
     def close(self) -> None: ...
 
 
@@ -243,7 +245,7 @@ class DuplexVoiceBridge:
                 continue
             try:
                 self.output.put_nowait((bytes(output_pcm), 48_000))
-                self.stage_logger("outbound_audio_started", {"chunks": self.output.qsize()})
+                self.stage_logger("outbound_pcm_ready", {"chunks": self.output.qsize(), "pcm_bytes": len(output_pcm)})
             except queue.Full:
                 self.dropped_output += 1
 
@@ -290,7 +292,7 @@ class DuplexVoiceBridge:
     def next_output(self, timeout: float = 0.1) -> tuple[bytes, int] | None:
         try:
             item = self.output.get(timeout=timeout)
-            self.stage_logger("outbound_audio_completed", {"queue_depth": self.output.qsize()})
+            self.stage_logger("outbound_pcm_forwarded", {"queue_depth": self.output.qsize(), "pcm_bytes": len(item[0])})
             return item
         except queue.Empty:
             return None
@@ -349,7 +351,8 @@ class LiveCallingCoordinator:
             if item is not None:
                 try:
                     endpoint.queue_pcm(*item)
-                except Exception:
+                except Exception as exc:
+                    self.stage_logger("outbound_pcm_place_error", {"error_type": type(exc).__name__})
                     return
 
     def _control_stage(self, stage: str, status: str, exc: Exception | None = None) -> None:
@@ -426,7 +429,7 @@ class LiveCallingCoordinator:
         return result
 
 
-def aiortc_endpoint_factory() -> WebRtcEndpoint:
+def aiortc_endpoint_factory(stage_logger: Callable[[str, dict], None] | None = None) -> WebRtcEndpoint:
     """Create the real aiortc endpoint; dependency is intentionally lazy."""
     import asyncio
     try:
@@ -434,6 +437,13 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
         from av import AudioFrame
     except ImportError as exc:
         raise RuntimeError("aiortc and av are required for live WebRTC media") from exc
+    raw_stage_logger = stage_logger or (lambda stage, metrics: None)
+
+    def emit_stage(stage: str, metrics: dict) -> None:
+        try:
+            raw_stage_logger(stage, metrics)
+        except Exception:  # noqa: BLE001 - telemetry must never break media
+            pass
 
     class OutputTrack(MediaStreamTrack):
         kind = "audio"
@@ -445,23 +455,33 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
             self.samples = 0
 
         async def recv(self):
-            import asyncio
             frame_bytes = 960 * 2
+            loop = asyncio.get_running_loop()
+            if self.samples == 0:
+                self._started_at = loop.time()
+            else:
+                target = self._started_at + (self.samples / 48_000)
+                await asyncio.sleep(max(0.0, target - loop.time()))
+
             while len(self.pending) < frame_bytes:
                 try:
-                    pcm, rate = await asyncio.wait_for(asyncio.to_thread(self.frames.get), timeout=0.02)
-                except asyncio.TimeoutError:
-                    pcm, rate = b"\x00" * frame_bytes, 48_000
+                    pcm, rate = self.frames.get_nowait()
+                except queue.Empty:
+                    break
                 if rate != 48_000:
                     raise MediaContractError("outbound WebRTC PCM must be 48 kHz")
                 self.pending.extend(pcm)
+                emit_stage("outbound_pcm_consumed", {"pcm_bytes": len(pcm), "queue_depth": self.frames.qsize()})
+
             pcm = bytes(self.pending[:frame_bytes])
             del self.pending[:frame_bytes]
+            if len(pcm) < frame_bytes:
+                pcm += b"\x00" * (frame_bytes - len(pcm))
             frame = AudioFrame(format="s16", layout="mono", samples=960)
             frame.sample_rate = 48_000
             frame.planes[0].update(pcm)
             frame.pts = self.samples
-            frame.time_base = __import__("fractions").Fraction(1, rate)
+            frame.time_base = __import__("fractions").Fraction(1, 48_000)
             self.samples += frame.samples
             return frame
 
@@ -471,6 +491,9 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
             self.ready = threading.Event()
             self.listeners: list[Callable[[bytes, int], None]] = []
             self._track_tasks: set[asyncio.Task] = set()
+            self._stats_task: asyncio.Task | None = None
+            self._state_lock = threading.Lock()
+            self._media_state = {"direction": "unknown", "codec": "unknown"}
             self._closed = False
             self.pc = None
             self.out = None
@@ -518,21 +541,102 @@ def aiortc_endpoint_factory() -> WebRtcEndpoint:
                 await self.pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type="offer"))
                 answer = await self.pc.createAnswer()
                 await self.pc.setLocalDescription(answer)
-                return self.pc.localDescription.sdp
+                transceiver = next((item for item in self.pc.getTransceivers() if item.sender.track is self.out), None)
+                direction = (transceiver.currentDirection or transceiver.direction) if transceiver else "unknown"
+                local_sdp = self.pc.localDescription.sdp
+                lines = local_sdp.splitlines()
+                audio_line = next((line for line in lines if line.startswith("m=audio ")), "")
+                payloads = audio_line.split()[3:]
+                codec_by_payload = {}
+                for line in lines:
+                    if line.startswith("a=rtpmap:"):
+                        payload, encoding = line[len("a=rtpmap:"):].split(None, 1)
+                        codec_by_payload[payload] = encoding.split("/", 1)[0].lower()
+                codec = codec_by_payload.get(payloads[0], "unknown") if payloads else "unknown"
+                with self._state_lock:
+                    self._media_state = {"direction": direction, "codec": codec}
+                    media_state = self._media_state.copy()
+                emit_stage("outbound_media_negotiated", media_state)
+                if direction not in {"sendrecv", "sendonly"}:
+                    raise MediaContractError("negotiated WebRTC direction does not allow outbound audio")
+                return local_sdp
             return asyncio.run_coroutine_threadsafe(negotiate(), self.loop).result(30)
 
         def add_pcm_listener(self, listener): self.listeners.append(listener)
-        def queue_pcm(self, pcm, sample_rate=48_000): self.out.frames.put_nowait((pcm, sample_rate))
+        def queue_pcm(self, pcm, sample_rate=48_000):
+            if sample_rate != 48_000 or len(pcm) % 2:
+                raise MediaContractError("outbound WebRTC PCM must be mono signed 16-bit at 48 kHz")
+            with self._state_lock:
+                if self._closed:
+                    raise MediaContractError("outbound WebRTC endpoint is closed")
+                self.out.frames.put_nowait((bytes(pcm), sample_rate))
+                queue_depth = self.out.frames.qsize()
+                if self.loop.is_running():
+                    try:
+                        self.loop.call_soon_threadsafe(self._schedule_sender_stats)
+                    except RuntimeError:
+                        pass
+            emit_stage("outbound_pcm_placed", {"pcm_bytes": len(pcm), "queue_depth": queue_depth})
+
+        def _schedule_sender_stats(self):
+            with self._state_lock:
+                if self._closed or (self._stats_task is not None and not self._stats_task.done()):
+                    return
+                task = self.loop.create_task(self._report_sender_stats_after_delay())
+                self._stats_task = task
+            task.add_done_callback(self._finish_sender_stats)
+
+        def _finish_sender_stats(self, task):
+            with self._state_lock:
+                if self._stats_task is task:
+                    self._stats_task = None
+            self._consume_track_result(task)
+
+        async def _collect_sender_stats(self):
+            report = await self.pc.getStats()
+            outbound = [item for item in report.values() if item.type == "outbound-rtp" and getattr(item, "kind", None) == "audio"]
+            return {
+                "packets_sent": sum(int(getattr(item, "packetsSent", 0)) for item in outbound),
+                "bytes_sent": sum(int(getattr(item, "bytesSent", 0)) for item in outbound),
+            }
+
+        async def _report_sender_stats_after_delay(self):
+            await asyncio.sleep(0.12)
+            with self._state_lock:
+                if self._closed:
+                    return {}
+            metrics = await self._collect_sender_stats()
+            emit_stage("outbound_rtp_stats", metrics)
+            return metrics
+
+        def media_state(self):
+            with self._state_lock:
+                return self._media_state.copy()
+
+        def sender_stats(self):
+            with self._state_lock:
+                if self._closed:
+                    raise MediaContractError("outbound WebRTC endpoint is closed")
+            metrics = asyncio.run_coroutine_threadsafe(self._collect_sender_stats(), self.loop).result(10)
+            emit_stage("outbound_rtp_stats", metrics)
+            return metrics
+
         def close(self):
-            if self._closed:
-                return
-            self._closed = True
+            with self._state_lock:
+                if self._closed:
+                    return
+                self._closed = True
 
             async def shutdown():
-                for task in tuple(self._track_tasks):
+                with self._state_lock:
+                    stats_task = self._stats_task
+                pending_tasks = set(self._track_tasks)
+                if stats_task is not None:
+                    pending_tasks.add(stats_task)
+                for task in tuple(pending_tasks):
                     task.cancel()
-                if self._track_tasks:
-                    await asyncio.gather(*self._track_tasks, return_exceptions=True)
+                if pending_tasks:
+                    await asyncio.gather(*pending_tasks, return_exceptions=True)
                 if self.pc is not None:
                     await self.pc.close()
 

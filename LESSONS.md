@@ -29,3 +29,4 @@
 - Keep a process boundary between the voice venv and Hermes: invoke Hermes' own interpreter/runtime through a redacted RPC, rather than importing the full external agent and its dependencies into the voice environment.
 - When a voice worker handles an LLM failure, record a redacted stage error and continue consuming the queue; provider failure must not terminate the worker thread.
 - Track aiortc remote-track tasks, cancel and gather them before `RTCPeerConnection.close()`, retrieve task exceptions, stop the loop, and join the loop thread to prevent closed-loop warnings.
+- Queue consumption is not RTP transmission: live voice acceptance requires proof that generated PCM is consumed by the actual paced `OutputTrack`, produces increasing sender packet/byte counters, and is heard by the caller; never treat a bridge queue dequeue as audible delivery.

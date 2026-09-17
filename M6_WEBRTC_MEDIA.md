@@ -11,7 +11,7 @@ Install the optional live-media dependencies with `requirements-m6-media.txt` to
 
 The runnable entrypoint is `scripts/run_whatsapp_webhook_server.py`. Its `main()` calls `configure_live_media()` before binding HTTP, so signed `connect` events are dispatched to `LiveCallingCoordinator` rather than the ingress-only adapter. Configure these environment names: `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `HORUS_ROOT`, `STT_MODEL`, `PIPER_AR_VOICE`, and `PIPER_EN_VOICE`; optional names are `STT_COMPUTE_TYPE`, `PIPER_TTS_SAMPLE_RATE`, `META_API_VERSION`, and `WEBHOOK_PORT`.
 
-The runner emits only redacted stage lines: `inbound_audio_started`, `utterance_ready`, `stt_complete`, `horus_turn_complete`, `tts_complete`, `outbound_audio_started`, `outbound_audio_completed`, and `teardown_complete`.
+The runner emits only redacted stage lines. Outbound stages are intentionally separate: `outbound_pcm_ready` (bridge queue), `outbound_pcm_forwarded` (bridge dequeue), `outbound_pcm_placed` (track queue), `outbound_pcm_consumed` (actual `OutputTrack.recv()` consumption), and `outbound_rtp_stats` (`packets_sent` / `bytes_sent`). Only the last two establish progress beyond the bridge queue, and caller audibility remains the final live acceptance gate. `outbound_media_negotiated` records only safe codec/direction names.
 
 Control-plane failures are staged as `control_sdp_answer`, `control_pre_accept`, or `control_accept` with only status, safe exception type, and HTTP status; raw Graph response bodies are never logged. A failed accept rolls back the provisional `RINGING` marker and event ID so a Meta retry can be accepted again.
 
@@ -28,4 +28,4 @@ $env:HERMES_AGENT_PYTHON = 'C:\Users\khale\AppData\Local\hermes\hermes-agent\ven
 & 'D:\HORUS\horus-wa-312\Scripts\python.exe' -c "from horus_local_voice.local_horus_port import LocalHorusPythonPort; p=LocalHorusPythonPort(r'D:\HORUS\horus-core'); print(''.join(p.stream_turn('voice-process-probe','Reply briefly: HORUS VOICE READY',None)))"
 ```
 
-A real Meta WebRTC negotiation, OPUS/ICE/DTLS-SRTP exchange, and live STT → HORUS → TTS audio remain **NOT MEASURED** until the owner starts a live test call with a runtime process configured with authorized Meta access and a concrete STT/TTS processor.
+A real live call has verified Meta control acceptance, ICE, inbound audio, STT, HORUS response generation, TTS, and bridge queue handling, but the caller heard no response. Local regression now proves silence → real PCM → paced `OutputTrack` frames → encoded RTP received by a second aiortc peer, with negotiated Opus/outbound direction and non-zero sender packet/byte counters. Caller audibility remains **NOT MEASURED** until the next owner-initiated live call.
