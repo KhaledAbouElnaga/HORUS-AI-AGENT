@@ -26,3 +26,4 @@
 - Treat Meta Calling public documentation and account entitlement as separate gates; build a normalized, redacted simulator without inferring live payload or media availability.
 - Keep a persistent event loop for aiortc peer connections; `asyncio.run()` per SDP operation closes the loop and breaks the live RTP/ICE lifecycle.
 - Accumulate live RTP audio with WebRTC VAD and endpoint on consecutive silence; fixed short Whisper windows can be discarded by VAD and destabilize language detection.
+- Treat live accept as a transaction: mark the normalized event only provisionally, roll back `RINGING` and its event marker on SDP/Graph failure, and let Meta retry the same connect instead of misclassifying it as a permanent duplicate.

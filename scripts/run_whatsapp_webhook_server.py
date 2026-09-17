@@ -66,7 +66,8 @@ def redacted_event_log(kind: str, status: str) -> str:
 
 
 def redacted_stage_log(stage: str, metrics: dict) -> None:
-    allowed = {key: value for key, value in metrics.items() if key in {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate"} and isinstance(value, (int, float))}
+    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type"}
+    allowed = {key: value for key, value in metrics.items() if key in allowed_keys and isinstance(value, (int, float, str))}
     suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
     logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
 
@@ -161,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             results = webhook.receive_post(body, self.headers.get("X-Hub-Signature-256"), os.environ["META_APP_SECRET"])
         except Exception:
-            logger.info(redacted_event_log("unparsed", "contract_mismatch"))
+            logger.info(redacted_event_log("unparsed", "control_error"))
             self.send_error(403)
             return
         for result in results:

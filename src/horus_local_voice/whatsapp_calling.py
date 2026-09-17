@@ -118,6 +118,19 @@ class WhatsAppCallingAdapter:
             session.state = "CLOSED"
         return {"status": "accepted", "session_id": sid, "state": session.state, "stale_output": 0}
 
+    def rollback_accept(self, envelope: dict) -> None:
+        """Undo only the pending connect marker after control-plane failure."""
+        event = CallingEvent.from_envelope(envelope)
+        sid = self.call_to_session.get(event.call_id)
+        if sid is None:
+            return
+        session = self.sessions[sid]
+        session.seen_event_ids.discard(event.event_id)
+        if session.state == "RINGING":
+            session.state = "NEW"
+            self.runtime.cancel(sid)
+            self.runtime.close_session(sid)
+
     def observe(self, event: CallingEvent) -> dict:
         """Redacted observability; never returns phone/user/call identifiers."""
         return {"kind": event.kind, "event_id": "[REDACTED]", "media_bytes": len(event.media)}

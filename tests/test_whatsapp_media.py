@@ -55,6 +55,32 @@ def test_live_coordinator_negotiates_and_uses_two_stage_accept():
     assert endpoint.closed
 
 
+def test_accept_failure_rolls_back_and_meta_retry_is_accepted():
+    runtime = Runtime(); endpoint = Endpoint()
+    class RetryingClient:
+        def __init__(self): self.actions = []; self.fail_once = True
+        def send(self, action):
+            self.actions.append(action)
+            if action.action == "accept" and self.fail_once:
+                self.fail_once = False
+                from horus_local_voice.whatsapp_media import CallControlError
+                raise CallControlError("rejected", http_status=500)
+            return {}
+    stages = []
+    client = RetryingClient()
+    coordinator = LiveCallingCoordinator(WhatsAppCallingAdapter(runtime), client, lambda: endpoint, DuplexVoiceBridge(Processor()), stage_logger=lambda s, m: stages.append((s, m)))
+    try:
+        coordinator.accept_connect(env())
+    except Exception:
+        pass
+    else:
+        raise AssertionError("first accept should fail")
+    assert coordinator.adapter.sessions["wa:phone-1:user-1:call-1"].state == "NEW"
+    assert coordinator.accept_connect(env())["status"] == "accepted"
+    assert [a.action for a in client.actions] == ["pre_accept", "accept", "pre_accept", "accept"]
+    assert any(stage == "control_accept" and metrics["status"] == "error" and metrics["http_status"] == 500 for stage, metrics in stages)
+
+
 def test_duplicate_connect_does_not_negotiate_again():
     runtime = Runtime(); endpoint = Endpoint(); client = Client()
     c = LiveCallingCoordinator(WhatsAppCallingAdapter(runtime), client, lambda: endpoint, DuplexVoiceBridge(Processor()))

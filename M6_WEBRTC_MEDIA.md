@@ -14,4 +14,7 @@ The runnable entrypoint is `scripts/run_whatsapp_webhook_server.py`. Its `main()
 
 The runner emits only redacted stage lines: `inbound_audio_started`, `utterance_ready`, `stt_complete`, `horus_turn_complete`, `tts_complete`, `outbound_audio_started`, `outbound_audio_completed`, and `teardown_complete`.
 
+Control-plane failures are staged as `control_sdp_answer`, `control_pre_accept`, or `control_accept` with only status, safe exception type, and HTTP status; raw Graph response bodies are never logged. A failed accept rolls back the provisional `RINGING` marker and event ID so a Meta retry can be accepted again.
+
+
 A real Meta WebRTC negotiation, OPUS/ICE/DTLS-SRTP exchange, and live STT → HORUS → TTS audio remain **NOT MEASURED** until the owner starts a live test call with a runtime process configured with authorized Meta access and a concrete STT/TTS processor.

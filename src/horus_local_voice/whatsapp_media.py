@@ -23,7 +23,9 @@ class MediaContractError(ValueError):
 
 
 class CallControlError(RuntimeError):
-    pass
+    def __init__(self, message: str, http_status: int | None = None):
+        super().__init__(message)
+        self.http_status = http_status
 
 
 class WebRtcEndpoint(Protocol):
@@ -68,10 +70,12 @@ class MetaCallingClient:
         try:
             with self._opener(request, timeout=30) as response:
                 status, body = response.status, response.read()
-        except (HTTPError, URLError, TimeoutError) as exc:
+        except HTTPError as exc:
+            raise CallControlError("Meta call-control request failed", http_status=exc.code) from exc
+        except (URLError, TimeoutError) as exc:
             raise CallControlError("Meta call-control request failed") from exc
         if status < 200 or status >= 300:
-            raise CallControlError("Meta call-control request rejected")
+            raise CallControlError("Meta call-control request rejected", http_status=status)
         try:
             decoded = json.loads(body) if body else {}
         except json.JSONDecodeError as exc:
@@ -328,6 +332,7 @@ class LiveCallingCoordinator:
         self.stage_logger = stage_logger or (lambda stage, metrics: None)
         self.endpoints: dict[str, WebRtcEndpoint] = {}
         self._workers: dict[str, threading.Thread] = {}
+        self._attempts: dict[str, int] = {}
 
     def _pump_output(self, session_id: str, endpoint: WebRtcEndpoint) -> None:
         while self.endpoints.get(session_id) is endpoint:
@@ -338,6 +343,14 @@ class LiveCallingCoordinator:
                 except Exception:
                     return
 
+    def _control_stage(self, stage: str, status: str, exc: Exception | None = None) -> None:
+        metrics = {"status": status}
+        if exc is not None:
+            metrics["error_type"] = type(exc).__name__
+            if isinstance(exc, CallControlError) and exc.http_status is not None:
+                metrics["http_status"] = exc.http_status
+        self.stage_logger(f"control_{stage}", metrics)
+
     def accept_connect(self, envelope: dict) -> dict:
         if envelope.get("kind") != "incoming":
             raise MediaContractError("connect acceptance requires normalized incoming event")
@@ -345,24 +358,49 @@ class LiveCallingCoordinator:
         offer = session.get("sdp")
         if not isinstance(offer, str) or not offer:
             raise MediaContractError("connect event is missing SDP offer")
+        call_id = envelope["call_id"]
         result = self.adapter.ingest(envelope)
         if result.get("status") != "accepted":
             return result
-        endpoint = self.endpoint_factory()
-        endpoint.add_pcm_listener(self.voice.on_pcm)
-        answer = endpoint.answer(offer)
-        phone_id = envelope["phone_number_id"]
-        call_id = envelope["call_id"]
-        endpoint_key = result["session_id"]
-        if hasattr(self.voice.processor, "session_id"):
-            self.voice.processor.session_id = endpoint_key
-        self.client.send(CallAction(phone_id, call_id, "pre_accept", answer))
-        self.client.send(CallAction(phone_id, call_id, "accept", answer))
-        self.endpoints[endpoint_key] = endpoint
-        worker = threading.Thread(target=self._pump_output, args=(endpoint_key, endpoint), daemon=True)
-        self._workers[endpoint_key] = worker
-        worker.start()
-        return {"status": "accepted", "session_id": endpoint_key, "media": "negotiated"}
+        endpoint = None
+        stage = "adapter_ingest"
+        self._attempts[call_id] = self._attempts.get(call_id, 0) + 1
+        self._control_stage(stage, "ok")
+        try:
+            stage = "sdp_answer"
+            endpoint = self.endpoint_factory()
+            endpoint.add_pcm_listener(self.voice.on_pcm)
+            answer = endpoint.answer(offer)
+            self._control_stage(stage, "ok")
+            phone_id = envelope["phone_number_id"]
+            stage = "pre_accept"
+            self.client.send(CallAction(phone_id, call_id, "pre_accept", answer))
+            self._control_stage(stage, "ok")
+            stage = "accept"
+            self.client.send(CallAction(phone_id, call_id, "accept", answer))
+            self._control_stage(stage, "ok")
+            endpoint_key = result["session_id"]
+            if hasattr(self.voice.processor, "session_id"):
+                self.voice.processor.session_id = endpoint_key
+            self.endpoints[endpoint_key] = endpoint
+            worker = threading.Thread(target=self._pump_output, args=(endpoint_key, endpoint), daemon=True)
+            self._workers[endpoint_key] = worker
+            worker.start()
+            self._attempts.pop(call_id, None)
+            return {"status": "accepted", "session_id": endpoint_key, "media": "negotiated"}
+        except Exception as exc:
+            self._control_stage(stage, "error", exc)
+            if endpoint is not None:
+                try:
+                    endpoint.close()
+                except Exception as cleanup_exc:
+                    self._control_stage("endpoint_cleanup", "error", cleanup_exc)
+            try:
+                self.adapter.rollback_accept(envelope)
+                self._control_stage("rollback", "ok")
+            except Exception as rollback_exc:
+                self._control_stage("rollback", "error", rollback_exc)
+            raise
 
     def hangup(self, envelope: dict) -> dict:
         result = self.adapter.ingest(envelope)
