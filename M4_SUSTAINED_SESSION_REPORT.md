@@ -4,7 +4,7 @@
 
 Every turn executed the full local M4 path; no cached STT row was reused:
 
-`30 ms PCM chunks -> bounded ingress -> WebRTC VAD/1200 ms endpoint -> three incremental faster-whisper partials -> final STT -> streamed Qwen2.5-1.5B -> incremental phrase-chunked Piper`
+`30 ms PCM chunks -> bounded ingress -> WebRTC VAD/patient-600ms endpoint -> three incremental faster-whisper partials -> final STT -> streamed Qwen2.5-1.5B -> incremental phrase-chunked Piper`
 
 The run covered Egyptian-labelled Arabic, MSA, English, and mixed fixtures. It included five interruptions (turns 10, 20, 30, 40, 45), three component recoveries (turns 12, 28, 44), and pinned-memory recall at turn 50.
 
