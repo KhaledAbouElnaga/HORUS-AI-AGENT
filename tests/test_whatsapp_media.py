@@ -75,7 +75,23 @@ def test_meta_client_builds_non_sip_action_without_logging_or_leaking_token():
     assert requests[0].get_header("Authorization") == "Bearer SECRET-NOT-LOGGED"
 
 
-def test_pcm_pipeline_reaches_stt_horus_and_tts():
+def test_runnable_entrypoint_installs_live_media_handler(monkeypatch):
+    import scripts.run_whatsapp_webhook_server as runner
+
+    class Coordinator:
+        def __init__(self): self.events = []
+        def accept_connect(self, event): self.events.append(("connect", event)); return {"status": "accepted"}
+        def hangup(self, event): self.events.append(("terminate", event)); return {"status": "accepted"}
+
+    coordinator = Coordinator()
+    monkeypatch.setattr(runner, "build_live_coordinator", lambda: coordinator)
+    runner.webhook.event_handler = None
+    assert runner.configure_live_media() is coordinator
+    result = runner.webhook.event_handler({"kind": "incoming"})
+    assert result == {"status": "accepted"}
+    assert coordinator.events == [("connect", {"kind": "incoming"})]
+
+
     class Transcriber:
         def run(self, pcm):
             assert pcm == b"audio"

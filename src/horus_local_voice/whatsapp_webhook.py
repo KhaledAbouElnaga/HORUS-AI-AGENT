@@ -92,9 +92,10 @@ class WhatsAppCallingWebhook:
 
     path = CALLBACK_PATH
 
-    def __init__(self, adapter: WhatsAppCallingAdapter, event_parser: Callable[[dict], list[dict]]):
+    def __init__(self, adapter: WhatsAppCallingAdapter, event_parser: Callable[[dict], list[dict]], event_handler: Callable[[dict], dict] | None = None):
         self.adapter = adapter
         self.event_parser = event_parser
+        self.event_handler = event_handler
 
     @staticmethod
     def verify_get(query: Mapping[str, str], configured_verify_token: str) -> WebhookResponse:
@@ -127,4 +128,4 @@ class WhatsAppCallingWebhook:
         envelopes = self.event_parser(payload)
         if not isinstance(envelopes, list):
             raise WebhookPayloadError("event parser must return a list")
-        return [{"kind": event["kind"], **self.adapter.ingest(event)} for event in envelopes]
+        return [{"kind": event["kind"], **(self.event_handler(event) if self.event_handler else self.adapter.ingest(event))} for event in envelopes]

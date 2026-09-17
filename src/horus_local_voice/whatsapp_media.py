@@ -132,16 +132,17 @@ class PipelineVoiceTurnProcessor:
 class DuplexVoiceBridge:
     """Routes decoded inbound PCM through STT/runtime/TTS and queues output."""
 
-    def __init__(self, processor: VoiceTurnProcessor, max_output_chunks: int = 64):
+    def __init__(self, processor: VoiceTurnProcessor, max_output_chunks: int = 64, min_utterance_ms: int = 0):
         self.processor = processor
         self.output: queue.Queue[tuple[bytes, int]] = queue.Queue(maxsize=max_output_chunks)
+        self.min_utterance_ms = min_utterance_ms
+        self._input = bytearray()
+        self._input_rate = 48_000
         self.dropped_output = 0
         self._closed = False
         self._lock = threading.Lock()
 
-    def on_pcm(self, pcm: bytes, sample_rate: int) -> None:
-        if not pcm or self._closed:
-            return
+    def _emit(self, pcm: bytes, sample_rate: int) -> None:
         for output_pcm in self.processor.process_utterance(pcm, sample_rate):
             if not output_pcm:
                 continue
@@ -149,6 +150,26 @@ class DuplexVoiceBridge:
                 self.output.put_nowait((bytes(output_pcm), 48_000))
             except queue.Full:
                 self.dropped_output += 1
+
+    def on_pcm(self, pcm: bytes, sample_rate: int) -> None:
+        if not pcm or self._closed:
+            return
+        if self.min_utterance_ms <= 0:
+            self._emit(pcm, sample_rate)
+            return
+        self._input_rate = sample_rate
+        self._input.extend(pcm)
+        threshold = max(2, int(sample_rate * 2 * self.min_utterance_ms / 1000))
+        while len(self._input) >= threshold and not self._closed:
+            chunk = bytes(self._input[:threshold])
+            del self._input[:threshold]
+            self._emit(chunk, sample_rate)
+
+    def flush(self) -> None:
+        if self._input and not self._closed:
+            chunk = bytes(self._input)
+            self._input.clear()
+            self._emit(chunk, self._input_rate)
 
     def next_output(self, timeout: float = 0.1) -> tuple[bytes, int] | None:
         try:
@@ -202,6 +223,8 @@ class LiveCallingCoordinator:
         phone_id = envelope["phone_number_id"]
         call_id = envelope["call_id"]
         endpoint_key = result["session_id"]
+        if hasattr(self.voice.processor, "session_id"):
+            self.voice.processor.session_id = endpoint_key
         self.client.send(CallAction(phone_id, call_id, "pre_accept", answer))
         self.client.send(CallAction(phone_id, call_id, "accept", answer))
         self.endpoints[endpoint_key] = endpoint
@@ -217,6 +240,7 @@ class LiveCallingCoordinator:
         self._workers.pop(sid, None)
         if endpoint is not None:
             endpoint.close()
+        self.voice.flush()
         self.voice.close()
         return result
 
