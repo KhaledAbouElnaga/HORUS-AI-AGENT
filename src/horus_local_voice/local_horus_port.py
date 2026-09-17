@@ -1,23 +1,18 @@
-"""Transport to the existing local Python HORUS runtime.
-
-This imports the real application under ``D:/HORUS/horus-core``; it does not
-reimplement agent, memory, or task logic. The runtime currently returns complete
-responses, so the adapter exposes word chunks but records native streaming as
-unsupported instead of claiming token streaming.
-"""
+"""Process-safe transport to the existing local HORUS memory and task modules."""
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from pathlib import Path
-import re
 from typing import Iterable
 
 from .runtime_adapter import RuntimeCancelled
+from .free_provider import HermesFreeProvider
 
 
 class LocalHorusPythonPort:
-    """RuntimePort for the existing local FastAPI application's core modules."""
+    """Voice port; Hermes agent execution stays in its own Python process."""
 
     native_streaming = False
     tool_categories = frozenset({"status", "tasks", "cost"})
@@ -28,13 +23,11 @@ class LocalHorusPythonPort:
             raise FileNotFoundError(f"HORUS core not found: {self.root}")
         if str(self.root) not in sys.path:
             sys.path.insert(0, str(self.root))
-        from app.core import agent, voice_state  # noqa: PLC0415
-        from app.adapters.llm import router as llm_router  # noqa: PLC0415
+        # These modules are deliberately narrow and do not import Hermes' agent.
         from app.adapters.memory import store  # noqa: PLC0415
         from app.tasks import engine  # noqa: PLC0415
-        from .free_provider import install_free_provider  # noqa: PLC0415
-        self.free_provider = install_free_provider(llm_router)
-        self.agent, self.voice_state = agent, voice_state
+        self.free_provider = HermesFreeProvider()
+        self.agent, self.voice_state = None, None
         self.memory, self.tasks = store, engine
         self._cancelled: set[str] = set()
         self._contexts: dict[str, list[dict]] = {}
@@ -53,16 +46,13 @@ class LocalHorusPythonPort:
             reply, model, cost = memory_reply, "local-memory", 0.0
         else:
             self.free_provider.bind_session(session_id)
-            reply, model, cost = asyncio.run(self.agent.handle_text(normalized, context=context))
+            messages = context + [{"role": "user", "content": normalized}]
+            reply, model, cost = asyncio.run(self.free_provider.complete(messages))
         context.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
-        # The real app returns one completed response; these are transport chunks,
-        # not evidence that the remote/local agent emitted a native stream.
-        # Preserve every separator so TTS receives the exact runtime response.
         yield from re.findall(r"\S+\s*", reply)
 
     @staticmethod
     def normalize_spoken_command(text: str) -> str:
-        """Map only recognized spoken aliases to existing HORUS commands."""
         value = " ".join(text.lower().split())
         if value.startswith("/status") or any(x in value for x in ("status", "health", "healthy", "system", "doing", "حالة", "صحتك", "صحّتك", "حالة النظام")):
             return "/status"
@@ -104,8 +94,8 @@ class LocalHorusPythonPort:
         if category not in self.tool_categories:
             raise PermissionError(f"unsupported local HORUS tool category: {category}")
         commands = {"status": "/status", "tasks": "/tasks", "cost": "/cost"}
-        reply, model, cost = asyncio.run(self.agent.handle_text(commands[category]))
-        return {"category": category, "reply": reply, "model": model, "cost": cost}
+        reply = "".join(self.stream_turn(session_id, commands[category], None))
+        return {"category": category, "reply": reply, "model": "opencode-free", "cost": 0.0}
 
     def cancel(self, session_id: str) -> None:
         self._cancelled.add(session_id)

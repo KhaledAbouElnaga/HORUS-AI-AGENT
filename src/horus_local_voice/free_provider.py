@@ -1,18 +1,15 @@
-"""Bridge HORUS to Hermes' already-verified keyless OpenCode execution path.
+"""Process-boundary bridge to Hermes' verified keyless OpenCode path.
 
-Do not call the Zen HTTP endpoint from here.  OpenCode Free rejects direct API
-clients ("can only be used from within OpenCode").  Hermes' ``oneshot`` runner
-is the local path that actually worked: it constructs the normal AIAgent,
-resolves ``opencode-free`` through Hermes, and owns the provider headers and
-session database.
+The voice environment never imports Hermes. The subprocess inherits the user's
+already-configured Hermes runtime environment and owns provider/session state.
 """
 from __future__ import annotations
 
 import asyncio
-import importlib
+import json
 import os
 from pathlib import Path
-import sys
+import subprocess
 from typing import Any, Callable
 
 
@@ -27,17 +24,40 @@ def _hermes_root() -> Path:
     return Path.home() / "AppData" / "Local" / "hermes" / "hermes-agent"
 
 
-def _load_runner() -> Callable[..., tuple[str, dict[str, Any]]]:
+def _hermes_python() -> Path:
+    configured = os.environ.get("HERMES_AGENT_PYTHON", "").strip()
+    if configured:
+        return Path(configured)
     root = _hermes_root()
-    if not (root / "hermes_cli" / "oneshot.py").is_file():
-        raise RuntimeError(f"Hermes agent runtime not found: {root}")
-    root_text = str(root)
-    if root_text not in sys.path:
-        sys.path.insert(0, root_text)
-    try:
-        return importlib.import_module("hermes_cli.oneshot")._run_agent
-    except Exception as exc:  # pragma: no cover - environment-specific diagnostic
-        raise RuntimeError("could not load Hermes one-shot runner") from exc
+    return root / "venv" / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+
+
+def _load_runner() -> Callable[..., tuple[str, dict[str, Any]]]:
+    python = _hermes_python()
+    rpc = Path(__file__).resolve().parents[2] / "scripts" / "hermes_free_rpc.py"
+    if not python.is_file():
+        raise RuntimeError(f"Hermes interpreter not found: {python}")
+    if not rpc.is_file():
+        raise RuntimeError(f"Hermes RPC bridge not found: {rpc}")
+
+    def run(prompt: str, **kwargs) -> tuple[str, dict[str, Any]]:
+        request = {"prompt": prompt, "model": kwargs["model"], "provider": kwargs["provider"], "resume": kwargs.get("resume")}
+        completed = subprocess.run(
+            [str(python), str(rpc)], input=json.dumps(request, ensure_ascii=False) + "\n",
+            text=True, capture_output=True, timeout=180, check=False,
+            env=os.environ.copy(),
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(f"Hermes subprocess failed with exit code {completed.returncode}")
+        try:
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError) as exc:
+            raise RuntimeError("Hermes subprocess returned invalid RPC output") from exc
+        if not result.get("ok"):
+            raise RuntimeError("Hermes subprocess returned a controlled error")
+        return str(result.get("response") or ""), {"session_id": result.get("session_id")}
+
+    return run
 
 
 def _messages_to_prompt(messages: list[dict]) -> str:

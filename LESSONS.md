@@ -10,7 +10,6 @@
 - Compare model configurations on identical fixtures and repeated warm runs; a lower-latency forced-language path can have a severe p95 outlier.
 - Treat model quality and runtime as separate gates: TinyLlama executed locally but produced unusable Arabic/instruction outputs, so it is not the selected agent path.
 - Keep physical device tests separate from unattended file tests; enumerating a microphone is not evidence that recording/playback quality passed.
-
 - A partial result is not automatically low latency: recomputing at a 50% prefix made first partial p95 9.04 s including audio accumulation. A persistent decoder/window is needed for a production latency win.
 - Streaming overlap alone did not beat the M3 aggregate p95; rolling context and repeated prefix decode can erase the first-audio gain.
 - On controlled Arabic-led mixed audio, forced Arabic improved WER and latency, but 0.7724 WER is still poor and synthetic evidence must not be presented as natural code-switch quality.
@@ -27,6 +26,6 @@
 - Keep a persistent event loop for aiortc peer connections; `asyncio.run()` per SDP operation closes the loop and breaks the live RTP/ICE lifecycle.
 - Accumulate live RTP audio with WebRTC VAD and endpoint on consecutive silence; fixed short Whisper windows can be discarded by VAD and destabilize language detection.
 - Treat live accept as a transaction: mark the normalized event only provisionally, roll back `RINGING` and its event marker on SDP/Graph failure, and let Meta retry the same connect instead of misclassifying it as a permanent duplicate.
-- OpenCode Free rejects direct Zen HTTP callers with `FreeTierError`; use Hermes' local `hermes_cli.oneshot._run_agent` path, which supplies the in-process OpenCode identity and keyless routing.
+- Keep a process boundary between the voice venv and Hermes: invoke Hermes' own interpreter/runtime through a redacted RPC, rather than importing the full external agent and its dependencies into the voice environment.
 - When a voice worker handles an LLM failure, record a redacted stage error and continue consuming the queue; provider failure must not terminate the worker thread.
 - Track aiortc remote-track tasks, cancel and gather them before `RTCPeerConnection.close()`, retrieve task exceptions, stop the loop, and join the loop thread to prevent closed-loop warnings.
