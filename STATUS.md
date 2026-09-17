@@ -1,6 +1,6 @@
 # Status
 
-- **Current milestone:** Milestone 5 — local runtime integration **FINAL-REVIEW READY**.
+- **Current milestone:** Milestone 6 — official WhatsApp Calling adapter and simulator **VERIFIED HUMAN-GATE READY**.
 - **Runtime:** `LocalHorusPythonPort` calls the installed `D:/HORUS/horus-core/app` agent, memory store, and task engine. The Worker local-dev path also ran via `wrangler dev --local`; no production changes.
 - **Voice path:** 50 real WAV turns decoded by faster-whisper `tiny/int8`, routed through the real local HORUS command/memory paths, and synthesized by Piper. No cached transcripts were injected.
 - **Memory:** 3 early facts, location correction, late recall, and two-session isolation PASS; late corrected value was `keys` as actually decoded by STT.
@@ -11,3 +11,4 @@
 - **Regression:** 41 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
 - **Safety:** No credentials, billing, provider, Meta/WhatsApp, deployment, or unrelated-system changes.
 - **Next action:** final ChatGPT review. Native streamed/cancellable runtime, deployed Worker voice transport, bilingual decoded quality, and provider-backed arbitrary turns remain explicitly PARTIAL / BLOCKED / NOT MEASURED. PR #13 remains open; do not merge.
+- **M6 official Calling:** public capability documented PASS; account entitlement, WABA/phone readiness, permissions, webhook/SIP configuration are NOT MEASURED and require Meta human gates. Live call is BLOCKED; official-contract replay is PASS / SIMULATED.
