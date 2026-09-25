@@ -8,21 +8,9 @@
 
 The signed Meta callback path, WABA `calls` subscription, GET challenge, invalid-signature rejection, real incoming delivery, and real terminate delivery have been verified. The tunnel is reversible test infrastructure, not production.
 
-## Live call evidence
+## Current live result
 
-Owner-reported live PASS:
-
-- control adapter ingest
-- SDP answer
-- ICE completion
-- `pre_accept` and `accept`
-- inbound WhatsApp audio
-- STT
-- HORUS response
-- TTS
-- bridge outbound queue placement/dequeue
-
-The caller heard no HORUS audio. Therefore bridge queue completion is not RTP/audibility evidence and Step 7 remains open.
+Owner-reported live transport PASS: control acceptance, ICE, inbound audio, STT, HORUS response, TTS, negotiated Opus/sendrecv, OutputTrack consumption, RTP packet/byte transmission, and caller-heard HORUS audio. The remaining failure is conversational: low-confidence Arabic-as-English detection, fragmented endpointing, possible TTS echo, and stale 9–17 second provider turns. Step 7 remains open until one clear Arabic question receives one semantically relevant Arabic answer.
 
 ## Root cause and local RTP regression
 
@@ -32,4 +20,4 @@ The fixed output track has one paced non-blocking consumer, emits mono signed 16
 
 ## Remaining live gate
 
-One owner-initiated call must show `outbound_pcm_consumed`, increasing `outbound_rtp_stats`, and audible HORUS speech at the WhatsApp caller. Until all three pass, outbound live audio and Roadmap Step 7 remain **NOT VERIFIED**.
+One owner-initiated call must show the new endpointing/turn stages and deliver one clear, semantically relevant Arabic answer to a clear Arabic question. Until that passes, conversational live quality and Roadmap Step 7 remain **NOT VERIFIED**.

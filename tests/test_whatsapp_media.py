@@ -55,6 +55,18 @@ def test_live_coordinator_negotiates_and_uses_two_stage_accept():
     assert endpoint.closed
 
 
+def test_live_coordinator_rejects_second_concurrent_call_to_preserve_isolation():
+    runtime = Runtime(); client = Client(); processor = Processor()
+    first = Endpoint()
+    coordinator = LiveCallingCoordinator(WhatsAppCallingAdapter(runtime), client, lambda: first, DuplexVoiceBridge(processor))
+    assert coordinator.accept_connect(env())["status"] == "accepted"
+    second = env(event_id="e2")
+    second["call_id"] = "call-2"
+    assert coordinator.accept_connect(second) == {"status": "busy"}
+    assert len(client.actions) == 2
+    coordinator.hangup({**env("hangup", "e3"), "session": None})
+
+
 def test_accept_failure_rolls_back_and_meta_retry_is_accepted():
     runtime = Runtime(); endpoint = Endpoint()
     class RetryingClient:
@@ -136,10 +148,21 @@ def test_runnable_entrypoint_installs_live_media_handler(monkeypatch):
     assert list(processor.process_utterance(b"audio", 16_000)) == [b"reply."]
 
 
+def test_pipeline_chunks_arabic_question_boundaries_for_tts():
+    class Transcriber:
+        def run(self, pcm): return [type("R", (), {"text": "سؤال"})()]
+    class Runtime:
+        last_turn_metrics = {"hermes_rpc_elapsed_ms": 12.0, "session_reused": True}
+        def stream_turn(self, sid, text, cancel): return ["أولاً؟ ثانياً."]
+    spoken = []
+    processor = PipelineVoiceTurnProcessor("session", Transcriber(), Runtime(), lambda text: spoken.append(text) or b"\x01\x00")
+    assert list(processor.process_utterance(b"audio", 16_000)) == [b"\x01\x00", b"\x01\x00"]
+    assert spoken == ["أولاً؟", "ثانياً."]
+
 
 def test_vad_accumulates_until_silence_boundary():
     from horus_local_voice.whatsapp_media import VadEndpointAccumulator
-    vad = VadEndpointAccumulator(end_silence_ms=60)
+    vad = VadEndpointAccumulator(end_silence_ms=60, min_utterance_ms=120)
     sequence = iter([True] * 3 + [False] * 4)
     vad.vad.is_speech = lambda frame, rate: next(sequence)
     frame = bytes([1, 0]) * 960
@@ -152,11 +175,24 @@ def test_vad_accumulates_until_silence_boundary():
 
 def test_vad_flushes_open_utterance_without_waiting_for_more_rtp():
     from horus_local_voice.whatsapp_media import VadEndpointAccumulator
-    vad = VadEndpointAccumulator()
+    vad = VadEndpointAccumulator(start_voiced_frames=1, min_utterance_ms=20)
     vad.vad.is_speech = lambda frame, rate: True
     frame = bytes([1, 0]) * 960
     vad.push(frame, 48_000)
     assert vad.flush() == [frame]
+
+
+def test_vad_rejects_short_noise_and_keeps_phone_question_with_pause_as_one_turn():
+    from horus_local_voice.whatsapp_media import VadEndpointAccumulator
+    vad = VadEndpointAccumulator(start_voiced_frames=3, end_silence_ms=700, min_utterance_ms=800)
+    frame = bytes([1, 0]) * 960
+    sequence = iter([True, False, True] + [True] * 12 + [False] * 10 + [True] * 16 + [False] * 35)
+    vad.vad.is_speech = lambda _frame, _rate: next(sequence)
+    completed = []
+    for _ in range(76):
+        completed.extend(vad.push(frame, 48_000))
+    assert len(completed) == 1
+    assert len(completed[0]) == 74 * len(frame)
 
 
 def test_media_stream_error_is_normal_track_closure():
@@ -177,6 +213,49 @@ def test_hangup_during_processing_discards_stale_output():
     assert started.wait(1)
     bridge.close(); release.set()
     assert bridge.next_output(timeout=0.3) is None
+
+
+def test_half_duplex_suppresses_inbound_echo_during_playback_and_tail():
+    events = []
+    processor = Processor()
+    bridge = DuplexVoiceBridge(processor, stage_logger=lambda stage, metrics: events.append((stage, metrics)), playback_tail_ms=800)
+    bridge.on_pcm(b"user", 48_000)
+    assert bridge.next_output() == (b"tts-pcm", 48_000)
+    bridge.on_playout_pcm(b"\x01\x00" * 960, 48_000)
+    bridge.on_pcm(b"echo", 48_000)
+    assert processor.inputs == [(b"user", 48_000)]
+    assert any(stage == "inbound_suppressed_playback" for stage, _ in events)
+    assert any(stage == "turn_to_first_audio" for stage, _ in events)
+    bridge.close()
+
+
+def test_newer_turn_replaces_queued_fragment_and_drops_stale_active_reply():
+    import threading
+    import time
+    started = threading.Event(); release = threading.Event()
+    events = []
+    class Slow:
+        def __init__(self): self.calls = []
+        def process_utterance(self, pcm, rate):
+            self.calls.append(pcm)
+            started.set(); release.wait(1)
+            return [pcm + b"-reply"]
+    processor = Slow()
+    bridge = DuplexVoiceBridge(processor, background_processing=True, stage_logger=lambda stage, metrics: events.append((stage, metrics)))
+    bridge.on_pcm(b"first", 48_000)
+    assert started.wait(1)
+    bridge.on_pcm(b"fragment", 48_000)
+    bridge.on_pcm(b"latest", 48_000)
+    release.set()
+    deadline = time.time() + 1
+    output = None
+    while time.time() < deadline and output is None:
+        output = bridge.next_output(timeout=0.05)
+    assert output == (b"latest-reply", 48_000)
+    assert bridge.turn_replacements == 1 and bridge.stale_turn_drops >= 1
+    assert any(stage == "turn_replaced" for stage, _ in events)
+    assert any(stage == "stale_turn_dropped" for stage, _ in events)
+    bridge.close()
 
 
 def test_duplex_bridge_worker_survives_provider_failure_and_processes_next_turn():
@@ -212,7 +291,8 @@ def test_duplex_bridge_is_bounded_and_closes_output():
     processor = Processor(); bridge = DuplexVoiceBridge(processor, max_output_chunks=1)
     bridge.on_pcm(b"a", 48000)
     assert bridge.next_output() == (b"tts-pcm", 48000)
-    bridge.on_pcm(b"b", 48000); bridge.on_pcm(b"c", 48000)
+    bridge._playback_until = 0; bridge.on_pcm(b"b", 48000)
+    bridge._playback_until = 0; bridge.on_pcm(b"c", 48000)
     assert bridge.dropped_output == 1
     bridge.close()
     assert bridge.next_output(timeout=0) is None
@@ -246,6 +326,8 @@ def test_output_track_delivers_pcm_immediately_after_silence_timeouts():
     endpoint = aiortc_endpoint_factory()
     loop = asyncio.new_event_loop()
     marker = (b"\x34\x12" * 960)
+    played = []
+    endpoint.add_output_listener(lambda pcm, rate: played.append((pcm, rate)))
     try:
         async def receive_after_silence():
             for _ in range(4):
@@ -256,6 +338,7 @@ def test_output_track_delivers_pcm_immediately_after_silence_timeouts():
 
         frame = loop.run_until_complete(receive_after_silence())
         assert bytes(frame.planes[0]) == marker
+        assert played == [(marker, 48_000)]
     finally:
         # Release abandoned executor Queue.get calls in the buggy implementation
         # so the RED test exits cleanly instead of leaking its repro threads.
@@ -464,22 +547,41 @@ def test_tts_routes_arabic_and_english_with_nonempty_pcm():
     assert events == [("tts_route", {"tts_route": "ar", "pcm_bytes": 2}), ("tts_route", {"tts_route": "en", "pcm_bytes": 2})]
 
 
-def test_bilingual_stt_retries_arabic_only_for_unsupported_detection():
+def test_bilingual_stt_compares_candidates_for_low_confidence_arabic_as_english():
     import numpy as np
     import scripts.run_whatsapp_webhook_server as runner
 
     class Model:
-        def __init__(self, language): self.language = language; self.calls = []
+        def __init__(self): self.calls = []
         def transcribe(self, samples, **kwargs):
             self.calls.append(kwargs)
-            text = "forced-ar" if kwargs.get("language") == "ar" else "auto"
-            return iter([type("Segment", (), {"text": text})()]), type("Info", (), {"language": self.language})()
+            language = kwargs.get("language")
+            if language == "ar":
+                text, quality = "مرحبا كيف حالك", -0.2
+            elif language == "en":
+                text, quality = "marhaban kayfa haluk", -2.8
+            else:
+                text, quality = "marhaban kayfa haluk", -2.8
+            segment = type("Segment", (), {"text": text, "avg_logprob": quality, "no_speech_prob": 0.02})()
+            return iter([segment]), type("Info", (), {"language": "en", "language_probability": 0.25})()
 
-    unsupported = Model("cy")
-    assert runner.build_bilingual_transcriber(unsupported, np, 5)(b"\x00\x00" * 160) == "forced-ar"
-    assert [call.get("language") for call in unsupported.calls] == [None, "ar"]
-    assert all(call["vad_filter"] is False and call["condition_on_previous_text"] is False and call["beam_size"] == 5 for call in unsupported.calls)
+    model = Model()
+    assert runner.build_bilingual_transcriber(model, np, 5)(b"\x00\x00" * 160) == "مرحبا كيف حالك"
+    assert [call.get("language") for call in model.calls] == [None, "ar", "en"]
+    assert all(call["vad_filter"] is False and call["condition_on_previous_text"] is False and call["beam_size"] == 5 for call in model.calls)
 
-    english = Model("en")
-    assert runner.build_bilingual_transcriber(english, np, 5)(b"\x00\x00" * 160) == "auto"
-    assert [call.get("language") for call in english.calls] == [None]
+
+def test_bilingual_stt_preserves_confident_english_without_forced_arabic():
+    import numpy as np
+    import scripts.run_whatsapp_webhook_server as runner
+
+    class Model:
+        def __init__(self): self.calls = []
+        def transcribe(self, samples, **kwargs):
+            self.calls.append(kwargs)
+            segment = type("Segment", (), {"text": "what is my schedule", "avg_logprob": -0.1, "no_speech_prob": 0.01})()
+            return iter([segment]), type("Info", (), {"language": "en", "language_probability": 0.91})()
+
+    model = Model()
+    assert runner.build_bilingual_transcriber(model, np, 5)(b"\x00\x00" * 160) == "what is my schedule"
+    assert [call.get("language") for call in model.calls] == [None]

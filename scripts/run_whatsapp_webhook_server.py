@@ -65,27 +65,43 @@ def redacted_event_log(kind: str, status: str) -> str:
 
 
 def redacted_stage_log(stage: str, metrics: dict) -> None:
-    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec", "tts_route"}
+    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec", "tts_route", "stale_turn_drops", "turn_replaced", "session_reused"}
     allowed = {key: value for key, value in metrics.items() if key in allowed_keys and isinstance(value, (int, float, str))}
     suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
     logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
 
 
-def build_bilingual_transcriber(model, numpy, beam_size: int):
-    """Auto-detect Arabic/English, retrying Arabic only for unsupported detections."""
+def build_bilingual_transcriber(model, numpy, beam_size: int, ambiguity_threshold: float = 0.60):
+    """Use auto language first; compare ar/en decodes when confidence is ambiguous."""
     def transcribe(pcm: bytes) -> str:
         samples = numpy.frombuffer(pcm, dtype=numpy.int16).astype(numpy.float32) / 32768.0
 
         def decode(language=None):
             segments, info = model.transcribe(samples, beam_size=beam_size, vad_filter=False, condition_on_previous_text=False, language=language)
-            return " ".join(segment.text.strip() for segment in segments).strip(), info
+            rows = list(segments)
+            text = " ".join(str(segment.text).strip() for segment in rows).strip()
+            quality = sum(float(getattr(segment, "avg_logprob", -5.0)) - float(getattr(segment, "no_speech_prob", 0.0)) for segment in rows) / max(1, len(rows))
+            return text, info, quality
 
-        text, info = decode()
-        if str(getattr(info, "language", "")) not in {"ar", "en"}:
-            arabic_text, _ = decode("ar")
-            if arabic_text:
-                return arabic_text
-        return text
+        auto_text, auto_info, auto_quality = decode()
+        language = str(getattr(auto_info, "language", ""))
+        probability = float(getattr(auto_info, "language_probability", 0.0) or 0.0)
+        if language in {"ar", "en"} and probability >= ambiguity_threshold:
+            return auto_text
+
+        arabic_text, _arabic_info, arabic_quality = decode("ar")
+        english_text, _english_info, english_quality = decode("en")
+
+        def score(text: str, quality: float, target: str) -> float:
+            arabic = sum("\u0600" <= char <= "\u06ff" for char in text)
+            latin = sum(char.isascii() and char.isalpha() for char in text)
+            letters = arabic + latin
+            plausibility = (arabic if target == "ar" else latin) / max(1, letters)
+            return quality + plausibility
+
+        arabic_score = score(arabic_text, arabic_quality, "ar")
+        english_score = score(english_text, english_quality, "en")
+        return arabic_text if arabic_text and arabic_score > english_score else english_text
     return transcribe
 
 
@@ -141,7 +157,7 @@ def build_live_coordinator() -> LiveCallingCoordinator:
     runtime = _IngressRuntime(horus)
     adapter = WhatsAppCallingAdapter(runtime)
     processor = PipelineVoiceTurnProcessor("pending", transcriber, horus, synthesize, tts_sample_rate=tts_rate, stage_logger=redacted_stage_log)
-    bridge = DuplexVoiceBridge(processor, max_output_chunks=64, background_processing=True, stage_logger=redacted_stage_log, endpointing=True, end_silence_ms=240)
+    bridge = DuplexVoiceBridge(processor, max_output_chunks=64, background_processing=True, stage_logger=redacted_stage_log, endpointing=True, end_silence_ms=int(os.environ.get("END_SILENCE_MS", "700")), playback_tail_ms=int(os.environ.get("PLAYBACK_TAIL_MS", "800")))
     client = MetaCallingClient(os.environ["WHATSAPP_ACCESS_TOKEN"], api_version=os.environ.get("META_API_VERSION", "v26.0"))
     return LiveCallingCoordinator(adapter, client, lambda: aiortc_endpoint_factory(redacted_stage_log), bridge, stage_logger=redacted_stage_log)
 

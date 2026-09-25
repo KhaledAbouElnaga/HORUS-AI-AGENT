@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 from typing import Any, Callable
 
 
@@ -81,6 +82,7 @@ class HermesFreeProvider:
         self._runner = runner or _load_runner()
         self._hermes_sessions: dict[str, str] = {}
         self._bound_session: str | None = None
+        self.last_completion_metrics: dict[str, float | bool] = {"hermes_rpc_elapsed_ms": 0.0, "session_reused": False}
 
     def bind_session(self, session_id: str | None) -> None:
         self._bound_session = session_id
@@ -96,6 +98,8 @@ class HermesFreeProvider:
         horus_session = self._bound_session
         resume = self._hermes_sessions.get(horus_session) if horus_session else None
         prompt = _messages_to_prompt(messages)
+        started = time.perf_counter()
+        self.last_completion_metrics = {"hermes_rpc_elapsed_ms": 0.0, "session_reused": bool(resume)}
         for model in FREE_MODELS:
             try:
                 response, result = await asyncio.to_thread(
@@ -111,6 +115,7 @@ class HermesFreeProvider:
                     raise RuntimeError(f"Hermes returned an empty response for {model}")
                 if horus_session and result.get("session_id"):
                     self._hermes_sessions[horus_session] = str(result["session_id"])
+                self.last_completion_metrics = {"hermes_rpc_elapsed_ms": round((time.perf_counter() - started) * 1000, 2), "session_reused": bool(resume)}
                 return text, model, 0.0
             except Exception as exc:  # noqa: BLE001 - provider failover boundary
                 last_error = exc

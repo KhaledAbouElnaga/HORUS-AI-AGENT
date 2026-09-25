@@ -31,6 +31,7 @@ class LocalHorusPythonPort:
         self.memory, self.tasks = store, engine
         self._cancelled: set[str] = set()
         self._contexts: dict[str, list[dict]] = {}
+        self.last_turn_metrics: dict[str, float | bool] = {"hermes_rpc_elapsed_ms": 0.0, "session_reused": False}
 
     def resume_session(self, session_id: str) -> None:
         self._contexts.setdefault(session_id, [])
@@ -43,11 +44,13 @@ class LocalHorusPythonPort:
         normalized = self.normalize_spoken_command(text)
         memory_reply = self._memory_intent(session_id, text)
         if memory_reply is not None:
+            self.last_turn_metrics = {"hermes_rpc_elapsed_ms": 0.0, "session_reused": False}
             reply, model, cost = memory_reply, "local-memory", 0.0
         else:
             self.free_provider.bind_session(session_id)
             messages = context + [{"role": "user", "content": normalized}]
             reply, model, cost = asyncio.run(self.free_provider.complete(messages))
+            self.last_turn_metrics = self.free_provider.last_completion_metrics.copy()
         context.extend([{"role": "user", "content": text}, {"role": "assistant", "content": reply}])
         yield from re.findall(r"\S+\s*", reply)
 

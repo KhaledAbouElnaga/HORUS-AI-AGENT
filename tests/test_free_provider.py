@@ -25,6 +25,8 @@ def test_free_provider_uses_hermes_oneshot_primary_and_preserves_session():
 
     asyncio.run(provider.complete([{"role": "user", "content": "again"}]))
     assert calls[1][1]["resume"] == "hermes-session-1"
+    assert provider.last_completion_metrics["session_reused"] is True
+    assert provider.last_completion_metrics["hermes_rpc_elapsed_ms"] >= 0
 
 
 def test_free_provider_falls_back_to_verified_second_model_without_credentials():
