@@ -33,3 +33,7 @@
 - On Windows, set both parent and child subprocess I/O explicitly to UTF-8; `text=True` alone inherits the active code page and can fail Arabic output/stderr decoding.
 - Endpointing must require a short voiced run, a minimum utterance duration, and patient silence for phone speech; dispatching a single VAD frame fragments questions and amplifies stale-turn latency.
 - When playback echo cannot yet be cancelled, use explicit half-duplex suppression and a tail; disable barge-in deliberately rather than letting TTS recursively trigger new turns.
+- Keep telephony transport and conversational intelligence as separate replaceable boundaries; a Realtime backend should reuse proven PCM/RTP pacing while bypassing legacy STT/VAD/LLM/TTS entirely.
+- Create one model WebSocket and media bridge per call, and make sequential-call freshness a regression; reusing a closed/global voice bridge risks cross-call leakage and makes cleanup unprovable.
+- A speech backend preflight must assert semantics and tool continuation, not just non-zero audio: stream the production PCM rates, count server turn commits, inspect transcript events only in memory, drain the real output boundary, and verify teardown plus a fresh second session.
+- Timeouts need an executable recovery path at every asynchronous boundary; cancel a stuck response, request a brief fallback only while the socket is usable, and always close rather than silently waiting.

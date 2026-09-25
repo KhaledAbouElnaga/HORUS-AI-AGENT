@@ -1,5 +1,9 @@
 import asyncio
+import queue
+import threading
+import time
 
+import pytest
 from aiortc.mediastreams import MediaStreamError
 
 from horus_local_voice.whatsapp_calling import WhatsAppCallingAdapter
@@ -55,6 +59,98 @@ def test_live_coordinator_negotiates_and_uses_two_stage_accept():
     assert endpoint.closed
 
 
+def test_output_pump_backpressures_instead_of_dropping_worker_on_full_track_queue():
+    class Voice:
+        def __init__(self): self.sent = False
+        def next_output(self, timeout=0.1):
+            if not self.sent:
+                self.sent = True
+                return b"pcm", 48_000
+            time.sleep(0.01)
+            return None
+
+    class BackpressuredEndpoint(Endpoint):
+        def __init__(self): super().__init__(); self.attempts = 0
+        def queue_pcm(self, pcm, sample_rate=48_000):
+            self.attempts += 1
+            if self.attempts < 3:
+                raise queue.Full
+            super().queue_pcm(pcm, sample_rate)
+
+    voice = Voice(); endpoint = BackpressuredEndpoint()
+    coordinator = LiveCallingCoordinator(WhatsAppCallingAdapter(Runtime()), Client(), lambda: endpoint, voice)
+    coordinator.endpoints["session"] = endpoint
+    worker = threading.Thread(target=coordinator._pump_output, args=("session", endpoint, voice))
+    worker.start()
+    deadline = time.monotonic() + 1
+    while not endpoint.queued and time.monotonic() < deadline:
+        time.sleep(0.01)
+    coordinator.endpoints.pop("session", None)
+    worker.join(timeout=1)
+    assert endpoint.queued == [(b"pcm", 48_000)]
+    assert endpoint.attempts == 3
+
+
+
+def test_pending_duplicate_cannot_release_single_call_reservation():
+    entered = threading.Event(); release = threading.Event(); results = []
+
+    class Voice:
+        def __init__(self, sid): self.session_id = sid
+        def start(self): entered.set(); release.wait(1)
+        def on_pcm(self, pcm, rate): pass
+        def on_playout_pcm(self, pcm, rate): pass
+        def next_output(self, timeout=0.1): return None
+        def flush(self): pass
+        def close(self): pass
+
+    coordinator = LiveCallingCoordinator(
+        WhatsAppCallingAdapter(Runtime()), Client(), Endpoint,
+        voice_factory=Voice,
+    )
+    worker = threading.Thread(target=lambda: results.append(coordinator.accept_connect(env())))
+    worker.start(); assert entered.wait(1)
+    assert coordinator.accept_connect(env(event_id="duplicate")) == {"status": "duplicate"}
+    other = env(event_id="other"); other["call_id"] = "call-2"
+    assert coordinator.accept_connect(other) == {"status": "busy"}
+    release.set(); worker.join(timeout=2)
+    assert results and results[0]["status"] == "accepted"
+    coordinator.hangup({**env("hangup", "done"), "session": None})
+
+
+def test_hangup_during_acceptance_cancels_pending_call_without_ghost_session():
+    entered = threading.Event(); release = threading.Event(); outcome = []; voices = []
+
+    class Voice:
+        def __init__(self, sid): self.session_id = sid; self.closed = False; voices.append(self)
+        def start(self): entered.set(); release.wait(1)
+        def on_pcm(self, pcm, rate): pass
+        def on_playout_pcm(self, pcm, rate): pass
+        def next_output(self, timeout=0.1): return None
+        def flush(self): pass
+        def close(self): self.closed = True
+
+    coordinator = LiveCallingCoordinator(
+        WhatsAppCallingAdapter(Runtime()), Client(), Endpoint,
+        voice_factory=Voice,
+    )
+
+    def accept():
+        try:
+            coordinator.accept_connect(env())
+        except Exception as exc:
+            outcome.append(exc)
+
+    worker = threading.Thread(target=accept)
+    worker.start(); assert entered.wait(1)
+    assert coordinator.hangup({**env("hangup", "cancel"), "session": None})["status"] == "accepted"
+    release.set(); worker.join(timeout=2)
+    assert outcome and isinstance(outcome[0], MediaContractError)
+    assert not coordinator.endpoints and coordinator._active_call_id is None and coordinator._pending_call_id is None
+    assert voices[0].closed
+
+
+
 def test_live_coordinator_rejects_second_concurrent_call_to_preserve_isolation():
     runtime = Runtime(); client = Client(); processor = Processor()
     first = Endpoint()
@@ -65,6 +161,57 @@ def test_live_coordinator_rejects_second_concurrent_call_to_preserve_isolation()
     assert coordinator.accept_connect(second) == {"status": "busy"}
     assert len(client.actions) == 2
     coordinator.hangup({**env("hangup", "e3"), "session": None})
+
+
+def test_live_coordinator_voice_factory_closes_session_and_allows_fresh_call():
+    runtime = Runtime(); client = Client(); endpoints = []; voices = []
+
+    class Voice:
+        def __init__(self, sid): self.session_id = sid; self.started = False; self.closed = False
+        def start(self): self.started = True
+        def on_pcm(self, pcm, rate): pass
+        def on_playout_pcm(self, pcm, rate): pass
+        def next_output(self, timeout=0.1): return None
+        def flush(self): pass
+        def close(self): self.closed = True
+
+    def endpoint_factory():
+        endpoint = Endpoint(); endpoints.append(endpoint); return endpoint
+
+    def voice_factory(sid):
+        voice = Voice(sid); voices.append(voice); return voice
+
+    coordinator = LiveCallingCoordinator(
+        WhatsAppCallingAdapter(runtime), client, endpoint_factory,
+        voice_factory=voice_factory,
+    )
+    assert coordinator.accept_connect(env())["status"] == "accepted"
+    assert voices[0].started and voices[0].session_id == "wa:phone-1:user-1:call-1"
+    coordinator.hangup({**env("hangup", "e2"), "session": None})
+    assert voices[0].closed and endpoints[0].closed
+
+    fresh = env(event_id="e3")
+    fresh["call_id"] = "call-2"
+    assert coordinator.accept_connect(fresh)["status"] == "accepted"
+    assert len(voices) == 2 and voices[1] is not voices[0] and voices[1].started
+    coordinator.hangup({**fresh, "kind": "hangup", "event_id": "e4", "session": None})
+    assert voices[1].closed
+
+
+def test_adapter_ingest_failure_does_not_poison_busy_gate(monkeypatch):
+    runtime = Runtime(); endpoint = Endpoint(); client = Client()
+    coordinator = LiveCallingCoordinator(
+        WhatsAppCallingAdapter(runtime), client, lambda: endpoint, DuplexVoiceBridge(Processor())
+    )
+    original = coordinator.adapter.ingest
+    monkeypatch.setattr(coordinator.adapter, "ingest", lambda event: (_ for _ in ()).throw(RuntimeError("invalid ingress")))
+    with pytest.raises(RuntimeError, match="invalid ingress"):
+        coordinator.accept_connect(env())
+    monkeypatch.setattr(coordinator.adapter, "ingest", original)
+    second = env(event_id="e2")
+    second["call_id"] = "call-2"
+    assert coordinator.accept_connect(second)["status"] == "accepted"
+
 
 
 def test_accept_failure_rolls_back_and_meta_retry_is_accepted():
@@ -115,6 +262,50 @@ def test_meta_client_builds_non_sip_action_without_logging_or_leaking_token():
     assert '"action": "terminate"' in body
     assert "SECRET-NOT-LOGGED" not in body
     assert requests[0].get_header("Authorization") == "Bearer SECRET-NOT-LOGGED"
+
+
+def test_realtime_backend_build_does_not_load_legacy_voice_stack(monkeypatch):
+    import builtins
+    import scripts.run_whatsapp_webhook_server as runner
+    from horus_local_voice.realtime_voice import RealtimeVoiceBridge
+
+    values = {
+        "HORUS_VOICE_BACKEND": "realtime",
+        "WHATSAPP_WEBHOOK_VERIFY_TOKEN": "not-a-real-secret",
+        "META_APP_SECRET": "not-a-real-secret",
+        "WHATSAPP_ACCESS_TOKEN": "not-a-real-token",
+        "HORUS_ROOT": "D:/HORUS/horus-core",
+        "OPENAI_API_KEY": "not-a-real-key",
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("PIPER_AR_VOICE", raising=False)
+    monkeypatch.delenv("PIPER_EN_VOICE", raising=False)
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name in {"faster_whisper", "webrtcvad", "piper"}:
+            raise AssertionError(f"legacy dependency loaded in realtime mode: {name}")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    coordinator = runner.build_live_coordinator()
+    assert coordinator.voice is None
+    bridge = coordinator.voice_factory("isolated-realtime-session")
+    assert isinstance(bridge, RealtimeVoiceBridge)
+    assert bridge.model == "gpt-realtime-2.1"
+    assert bridge.tool_runtime.free_provider is None
+    bridge.close()
+
+
+def test_voice_backend_defaults_legacy_and_rejects_unknown(monkeypatch):
+    import scripts.run_whatsapp_webhook_server as runner
+
+    monkeypatch.delenv("HORUS_VOICE_BACKEND", raising=False)
+    assert runner.voice_backend() == "legacy"
+    monkeypatch.setenv("HORUS_VOICE_BACKEND", "unsupported")
+    with pytest.raises(RuntimeError, match="HORUS_VOICE_BACKEND"):
+        runner.voice_backend()
 
 
 def test_runnable_entrypoint_installs_live_media_handler(monkeypatch):

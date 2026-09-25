@@ -26,14 +26,21 @@ from horus_local_voice.whatsapp_webhook import WhatsAppCallingWebhook, parse_met
 logger = logging.getLogger("whatsapp_calling_live")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-LIVE_ENV_NAMES = (
+COMMON_LIVE_ENV_NAMES = (
     "WHATSAPP_WEBHOOK_VERIFY_TOKEN",
     "META_APP_SECRET",
     "WHATSAPP_ACCESS_TOKEN",
     "HORUS_ROOT",
-    "PIPER_AR_VOICE",
-    "PIPER_EN_VOICE",
 )
+LEGACY_LIVE_ENV_NAMES = ("PIPER_AR_VOICE", "PIPER_EN_VOICE")
+REALTIME_LIVE_ENV_NAMES = ("OPENAI_API_KEY",)
+
+
+def voice_backend() -> str:
+    backend = os.environ.get("HORUS_VOICE_BACKEND", "legacy").strip().lower()
+    if backend not in {"legacy", "realtime"}:
+        raise RuntimeError("HORUS_VOICE_BACKEND must be realtime or legacy")
+    return backend
 
 
 class _IngressRuntime:
@@ -65,7 +72,7 @@ def redacted_event_log(kind: str, status: str) -> str:
 
 
 def redacted_stage_log(stage: str, metrics: dict) -> None:
-    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec", "tts_route", "stale_turn_drops", "turn_replaced", "session_reused"}
+    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec", "tts_route", "stale_turn_drops", "turn_replaced", "session_reused", "model", "tool", "stage"}
     allowed = {key: value for key, value in metrics.items() if key in allowed_keys and isinstance(value, (int, float, str))}
     suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
     logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
@@ -129,37 +136,74 @@ def create_live_event_handler(coordinator: LiveCallingCoordinator):
 
 
 def build_live_coordinator() -> LiveCallingCoordinator:
-    """Load real STT, HORUS, TTS, Graph control, and aiortc components."""
-    missing = [name for name in LIVE_ENV_NAMES if not os.environ.get(name)]
+    """Build either legacy local speech or OpenAI Realtime over the same RTP path."""
+    backend = voice_backend()
+    required = COMMON_LIVE_ENV_NAMES + (REALTIME_LIVE_ENV_NAMES if backend == "realtime" else LEGACY_LIVE_ENV_NAMES)
+    missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise RuntimeError("missing live media environment variables: " + ",".join(missing))
-    import numpy as np
-    from faster_whisper import WhisperModel
-    from piper import PiperVoice
+
     from horus_local_voice.local_horus_port import LocalHorusPythonPort
-    from horus_local_voice.streaming import FinalUtteranceTranscriber, script_route
 
-    model = WhisperModel(os.environ.get("STT_MODEL", "base"), device="cpu", compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"))
-    beam_size = int(os.environ.get("STT_BEAM_SIZE", "5"))
-
-    transcribe = build_bilingual_transcriber(model, np, beam_size)
-
-    transcriber = FinalUtteranceTranscriber(transcribe, sample_rate=16_000)
-    voices = {
-        "ar": PiperVoice.load(os.environ["PIPER_AR_VOICE"]),
-        "en": PiperVoice.load(os.environ["PIPER_EN_VOICE"]),
-    }
-    tts_rate = int(os.environ.get("PIPER_TTS_SAMPLE_RATE", "22050"))
-
-    synthesize = build_tts_synthesizer(voices, script_route, redacted_stage_log)
-
-    horus = LocalHorusPythonPort(os.environ["HORUS_ROOT"])
+    realtime = backend == "realtime"
+    horus = LocalHorusPythonPort(os.environ["HORUS_ROOT"], enable_conversation=not realtime)
     runtime = _IngressRuntime(horus)
     adapter = WhatsAppCallingAdapter(runtime)
-    processor = PipelineVoiceTurnProcessor("pending", transcriber, horus, synthesize, tts_sample_rate=tts_rate, stage_logger=redacted_stage_log)
-    bridge = DuplexVoiceBridge(processor, max_output_chunks=64, background_processing=True, stage_logger=redacted_stage_log, endpointing=True, end_silence_ms=int(os.environ.get("END_SILENCE_MS", "700")), playback_tail_ms=int(os.environ.get("PLAYBACK_TAIL_MS", "800")))
     client = MetaCallingClient(os.environ["WHATSAPP_ACCESS_TOKEN"], api_version=os.environ.get("META_API_VERSION", "v26.0"))
-    return LiveCallingCoordinator(adapter, client, lambda: aiortc_endpoint_factory(redacted_stage_log), bridge, stage_logger=redacted_stage_log)
+
+    if realtime:
+        from horus_local_voice.realtime_voice import REALTIME_MODEL, RealtimeTimeouts, RealtimeVoiceBridge
+
+        timeouts = RealtimeTimeouts(
+            connect=float(os.environ.get("REALTIME_CONNECT_TIMEOUT_S", "10")),
+            first_response=float(os.environ.get("REALTIME_FIRST_RESPONSE_TIMEOUT_S", "12")),
+            tool=float(os.environ.get("REALTIME_TOOL_TIMEOUT_S", "5")),
+            response=float(os.environ.get("REALTIME_RESPONSE_TIMEOUT_S", "30")),
+        )
+
+        def create_voice(session_id: str):
+            return RealtimeVoiceBridge(
+                session_id,
+                horus,
+                model=REALTIME_MODEL,
+                voice=os.environ.get("REALTIME_VOICE", "marin"),
+                timeouts=timeouts,
+                playback_tail_ms=int(os.environ.get("PLAYBACK_TAIL_MS", "600")),
+                stage_logger=redacted_stage_log,
+            )
+    else:
+        import numpy as np
+        from faster_whisper import WhisperModel
+        from piper import PiperVoice
+        from horus_local_voice.streaming import FinalUtteranceTranscriber, script_route
+
+        model = WhisperModel(os.environ.get("STT_MODEL", "base"), device="cpu", compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"))
+        beam_size = int(os.environ.get("STT_BEAM_SIZE", "5"))
+        transcribe = build_bilingual_transcriber(model, np, beam_size)
+        transcriber = FinalUtteranceTranscriber(transcribe, sample_rate=16_000)
+        voices = {
+            "ar": PiperVoice.load(os.environ["PIPER_AR_VOICE"]),
+            "en": PiperVoice.load(os.environ["PIPER_EN_VOICE"]),
+        }
+        tts_rate = int(os.environ.get("PIPER_TTS_SAMPLE_RATE", "22050"))
+        synthesize = build_tts_synthesizer(voices, script_route, redacted_stage_log)
+
+        def create_voice(session_id: str):
+            processor = PipelineVoiceTurnProcessor(
+                session_id, transcriber, horus, synthesize,
+                tts_sample_rate=tts_rate, stage_logger=redacted_stage_log,
+            )
+            return DuplexVoiceBridge(
+                processor, max_output_chunks=64, background_processing=True,
+                stage_logger=redacted_stage_log, endpointing=True,
+                end_silence_ms=int(os.environ.get("END_SILENCE_MS", "700")),
+                playback_tail_ms=int(os.environ.get("PLAYBACK_TAIL_MS", "800")),
+            )
+
+    return LiveCallingCoordinator(
+        adapter, client, lambda: aiortc_endpoint_factory(redacted_stage_log),
+        voice_factory=create_voice, stage_logger=redacted_stage_log,
+    )
 
 
 # Import-safe ingress object; live handler is attached only in main().
@@ -222,7 +266,7 @@ def configure_live_media() -> LiveCallingCoordinator:
 def main() -> None:
     configure_live_media()
     port = int(os.environ.get("WEBHOOK_PORT", "8788"))
-    logger.info("live_calling_server media=enabled port=%d signature_validation=enabled", port)
+    logger.info("live_calling_server media=enabled backend=%s port=%d signature_validation=enabled", voice_backend(), port)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 

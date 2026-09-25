@@ -420,26 +420,41 @@ async def consume_remote_audio_track(track, listeners: Iterable[Callable[[bytes,
 class LiveCallingCoordinator:
     """Accepts a verified normalized connect and attaches the duplex bridge."""
 
-    def __init__(self, adapter: WhatsAppCallingAdapter, client: MetaCallingClient, endpoint_factory: Callable[[], WebRtcEndpoint], voice: DuplexVoiceBridge, stage_logger: Callable[[str, dict], None] | None = None):
+    def __init__(self, adapter: WhatsAppCallingAdapter, client: MetaCallingClient,
+                 endpoint_factory: Callable[[], WebRtcEndpoint], voice=None,
+                 stage_logger: Callable[[str, dict], None] | None = None,
+                 voice_factory: Callable[[str], object] | None = None):
+        if voice is None and voice_factory is None:
+            raise ValueError("voice or voice_factory is required")
         self.adapter = adapter
         self.client = client
         self.endpoint_factory = endpoint_factory
         self.voice = voice
+        self.voice_factory = voice_factory
         self.stage_logger = stage_logger or (lambda stage, metrics: None)
         self.endpoints: dict[str, WebRtcEndpoint] = {}
+        self._voices: dict[str, object] = {}
         self._workers: dict[str, threading.Thread] = {}
         self._attempts: dict[str, int] = {}
         self._active_call_id: str | None = None
+        self._pending_call_id: str | None = None
+        self._cancelled_call_ids: set[str] = set()
+        self._call_lock = threading.Lock()
 
-    def _pump_output(self, session_id: str, endpoint: WebRtcEndpoint) -> None:
+    def _pump_output(self, session_id: str, endpoint: WebRtcEndpoint, voice) -> None:
         while self.endpoints.get(session_id) is endpoint:
-            item = self.voice.next_output(timeout=0.2)
+            item = voice.next_output(timeout=0.2)
             if item is not None:
-                try:
-                    endpoint.queue_pcm(*item)
-                except Exception as exc:
-                    self.stage_logger("outbound_pcm_place_error", {"error_type": type(exc).__name__})
-                    return
+                while self.endpoints.get(session_id) is endpoint:
+                    try:
+                        endpoint.queue_pcm(*item)
+                        break
+                    except queue.Full:
+                        time.sleep(0.02)
+                        continue
+                    except Exception as exc:
+                        self.stage_logger("outbound_pcm_place_error", {"error_type": type(exc).__name__})
+                        return
 
     def _control_stage(self, stage: str, status: str, exc: Exception | None = None) -> None:
         metrics = {"status": status}
@@ -449,6 +464,11 @@ class LiveCallingCoordinator:
                 metrics["http_status"] = exc.http_status
         self.stage_logger(f"control_{stage}", metrics)
 
+    def _ensure_accept_live(self, call_id: str) -> None:
+        with self._call_lock:
+            if call_id in self._cancelled_call_ids:
+                raise MediaContractError("call terminated during acceptance")
+
     def accept_connect(self, envelope: dict) -> dict:
         if envelope.get("kind") != "incoming":
             raise MediaContractError("connect acceptance requires normalized incoming event")
@@ -457,38 +477,75 @@ class LiveCallingCoordinator:
         if not isinstance(offer, str) or not offer:
             raise MediaContractError("connect event is missing SDP offer")
         call_id = envelope["call_id"]
-        if self._active_call_id is not None and call_id != self._active_call_id:
-            self.stage_logger("control_adapter_ingest", {"status": "busy"})
-            return {"status": "busy"}
-        result = self.adapter.ingest(envelope)
+        with self._call_lock:
+            if self._pending_call_id is not None:
+                status = "duplicate" if call_id == self._pending_call_id else "busy"
+                self.stage_logger("control_adapter_ingest", {"status": status})
+                return {"status": status}
+            if self._active_call_id is not None:
+                status = "duplicate" if call_id == self._active_call_id else "busy"
+                self.stage_logger("control_adapter_ingest", {"status": status})
+                return {"status": status}
+            self._cancelled_call_ids.discard(call_id)
+            self._pending_call_id = call_id
+        try:
+            result = self.adapter.ingest(envelope)
+        except Exception:
+            with self._call_lock:
+                if self._pending_call_id == call_id:
+                    self._pending_call_id = None
+                self._cancelled_call_ids.discard(call_id)
+            raise
         if result.get("status") != "accepted":
+            with self._call_lock:
+                if self._pending_call_id == call_id:
+                    self._pending_call_id = None
+                self._cancelled_call_ids.discard(call_id)
             return result
         endpoint = None
+        endpoint_key = None
+        voice = None
         stage = "adapter_ingest"
         self._attempts[call_id] = self._attempts.get(call_id, 0) + 1
         self._control_stage(stage, "ok")
         try:
+            endpoint_key = result["session_id"]
+            voice = self.voice_factory(endpoint_key) if self.voice_factory is not None else self.voice
+            if hasattr(voice, "start"):
+                stage = "voice_backend"
+                voice.start()
+                self._control_stage(stage, "ok")
+            self._ensure_accept_live(call_id)
             stage = "sdp_answer"
             endpoint = self.endpoint_factory()
-            endpoint.add_pcm_listener(self.voice.on_pcm)
+            endpoint.add_pcm_listener(voice.on_pcm)
             if hasattr(endpoint, "add_output_listener"):
-                endpoint.add_output_listener(self.voice.on_playout_pcm)
+                endpoint.add_output_listener(voice.on_playout_pcm)
             answer = endpoint.answer(offer)
             self._control_stage(stage, "ok")
+            self._ensure_accept_live(call_id)
             phone_id = envelope["phone_number_id"]
             stage = "pre_accept"
             self.client.send(CallAction(phone_id, call_id, "pre_accept", answer))
             self._control_stage(stage, "ok")
+            self._ensure_accept_live(call_id)
             stage = "accept"
             self.client.send(CallAction(phone_id, call_id, "accept", answer))
             self._control_stage(stage, "ok")
-            endpoint_key = result["session_id"]
-            if hasattr(self.voice.processor, "session_id"):
-                self.voice.processor.session_id = endpoint_key
-            self.endpoints[endpoint_key] = endpoint
-            worker = threading.Thread(target=self._pump_output, args=(endpoint_key, endpoint), daemon=True)
-            self._workers[endpoint_key] = worker
-            self._active_call_id = call_id
+            self._ensure_accept_live(call_id)
+            processor = getattr(voice, "processor", None)
+            if processor is not None and hasattr(processor, "session_id"):
+                processor.session_id = endpoint_key
+            worker = threading.Thread(target=self._pump_output, args=(endpoint_key, endpoint, voice), daemon=True)
+            with self._call_lock:
+                if call_id in self._cancelled_call_ids:
+                    raise MediaContractError("call terminated during acceptance")
+                self.endpoints[endpoint_key] = endpoint
+                self._voices[endpoint_key] = voice
+                self._workers[endpoint_key] = worker
+                self._active_call_id = call_id
+                self._pending_call_id = None
+                self._cancelled_call_ids.discard(call_id)
             worker.start()
             self._attempts.pop(call_id, None)
             return {"status": "accepted", "session_id": endpoint_key, "media": "negotiated"}
@@ -499,6 +556,21 @@ class LiveCallingCoordinator:
                     endpoint.close()
                 except Exception as cleanup_exc:
                     self._control_stage("endpoint_cleanup", "error", cleanup_exc)
+            if voice is not None and self.voice_factory is not None:
+                try:
+                    voice.close()
+                except Exception as cleanup_exc:
+                    self._control_stage("voice_cleanup", "error", cleanup_exc)
+            with self._call_lock:
+                if endpoint_key:
+                    self.endpoints.pop(endpoint_key, None)
+                    self._voices.pop(endpoint_key, None)
+                    self._workers.pop(endpoint_key, None)
+                if self._pending_call_id == call_id:
+                    self._pending_call_id = None
+                if self._active_call_id == call_id:
+                    self._active_call_id = None
+                self._cancelled_call_ids.discard(call_id)
             try:
                 self.adapter.rollback_accept(envelope)
                 self._control_stage("rollback", "ok")
@@ -507,18 +579,40 @@ class LiveCallingCoordinator:
             raise
 
     def hangup(self, envelope: dict) -> dict:
+        call_id = envelope.get("call_id")
+        with self._call_lock:
+            was_pending = call_id == self._pending_call_id
+            if was_pending:
+                self._cancelled_call_ids.add(call_id)
         result = self.adapter.ingest(envelope)
         sid = result.get("session_id")
-        endpoint = self.endpoints.pop(sid, None)
-        worker = self._workers.pop(sid, None)
+        with self._call_lock:
+            endpoint = self.endpoints.pop(sid, None)
+            voice = self._voices.pop(sid, None)
+            worker = self._workers.pop(sid, None)
         if endpoint is not None:
-            endpoint.close()
+            try:
+                endpoint.close()
+            except Exception as exc:
+                self._control_stage("endpoint_cleanup", "error", exc)
         if worker is not None and worker is not threading.current_thread():
             worker.join(timeout=5)
-        self.voice.flush()
-        self.voice.close()
-        if envelope.get("call_id") == self._active_call_id:
-            self._active_call_id = None
+        if voice is None and self.voice is not None and endpoint is not None:
+            voice = self.voice
+        if voice is not None:
+            try:
+                voice.flush()
+            except Exception as exc:
+                self._control_stage("voice_flush", "error", exc)
+            try:
+                voice.close()
+            except Exception as exc:
+                self._control_stage("voice_cleanup", "error", exc)
+        with self._call_lock:
+            if call_id == self._active_call_id:
+                self._active_call_id = None
+            if not was_pending:
+                self._cancelled_call_ids.discard(call_id)
         self.stage_logger("teardown_complete", {})
         return result
 

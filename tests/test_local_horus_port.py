@@ -40,6 +40,17 @@ def test_real_local_horus_safe_tool_categories_and_mutation_deny(local_runtime):
         adapter.call_tool(sid, "delete", {})
 
 
+def test_realtime_readonly_status_tool_bypasses_conversational_provider(local_runtime):
+    _adapter, port, sid = local_runtime
+    port.free_provider._runner = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider must not run"))
+    result = port.invoke_realtime_tool(sid, "status", {})
+    assert result["service"] == "HORUS"
+    assert result["ready"] is True
+    assert result["active_tasks"] == len(port.tasks.active_tasks())
+    with pytest.raises(PermissionError):
+        port.invoke_realtime_tool(sid, "delete", {})
+
+
 def test_real_local_horus_memory_intent_runs_through_voice_turn(local_runtime):
     adapter, _port, sid = local_runtime
     list(adapter.stream_turn(sid, "remember the location is Cairo"))

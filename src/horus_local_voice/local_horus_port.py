@@ -16,8 +16,9 @@ class LocalHorusPythonPort:
 
     native_streaming = False
     tool_categories = frozenset({"status", "tasks", "cost"})
+    realtime_tool_categories = frozenset({"status", "tasks"})
 
-    def __init__(self, root: str | Path = "D:/HORUS/horus-core"):
+    def __init__(self, root: str | Path = "D:/HORUS/horus-core", *, enable_conversation: bool = True):
         self.root = Path(root)
         if not (self.root / "app/core/agent.py").is_file():
             raise FileNotFoundError(f"HORUS core not found: {self.root}")
@@ -26,7 +27,7 @@ class LocalHorusPythonPort:
         # These modules are deliberately narrow and do not import Hermes' agent.
         from app.adapters.memory import store  # noqa: PLC0415
         from app.tasks import engine  # noqa: PLC0415
-        self.free_provider = HermesFreeProvider()
+        self.free_provider = HermesFreeProvider() if enable_conversation else None
         self.agent, self.voice_state = None, None
         self.memory, self.tasks = store, engine
         self._cancelled: set[str] = set()
@@ -47,6 +48,8 @@ class LocalHorusPythonPort:
             self.last_turn_metrics = {"hermes_rpc_elapsed_ms": 0.0, "session_reused": False}
             reply, model, cost = memory_reply, "local-memory", 0.0
         else:
+            if self.free_provider is None:
+                raise RuntimeError("conversational HORUS provider is disabled")
             self.free_provider.bind_session(session_id)
             messages = context + [{"role": "user", "content": normalized}]
             reply, model, cost = asyncio.run(self.free_provider.complete(messages))
@@ -100,10 +103,31 @@ class LocalHorusPythonPort:
         reply = "".join(self.stream_turn(session_id, commands[category], None))
         return {"category": category, "reply": reply, "model": "opencode-free", "cost": 0.0}
 
+    def invoke_realtime_tool(self, session_id: str, category: str, arguments: dict) -> object:
+        """Execute narrow read-only local tools without conversational generation."""
+        if category not in self.realtime_tool_categories or arguments:
+            raise PermissionError(f"unsupported realtime HORUS tool category: {category}")
+        active = self.tasks.active_tasks()
+        if category == "status":
+            return {"service": "HORUS", "ready": True, "active_tasks": len(active)}
+        return {
+            "service": "HORUS",
+            "tasks": [
+                {
+                    "task_id": item.get("task_id"),
+                    "title": item.get("title"),
+                    "status": item.get("status"),
+                    "progress": item.get("progress"),
+                }
+                for item in active
+            ],
+        }
+
     def cancel(self, session_id: str) -> None:
         self._cancelled.add(session_id)
 
     def close(self, session_id: str) -> None:
-        self.free_provider.close_session(session_id)
+        if self.free_provider is not None:
+            self.free_provider.close_session(session_id)
         self._contexts.pop(session_id, None)
         self._cancelled.discard(session_id)
