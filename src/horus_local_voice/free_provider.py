@@ -42,10 +42,12 @@ def _load_runner() -> Callable[..., tuple[str, dict[str, Any]]]:
 
     def run(prompt: str, **kwargs) -> tuple[str, dict[str, Any]]:
         request = {"prompt": prompt, "model": kwargs["model"], "provider": kwargs["provider"], "resume": kwargs.get("resume")}
+        child_env = os.environ.copy()
+        child_env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
         completed = subprocess.run(
             [str(python), str(rpc)], input=json.dumps(request, ensure_ascii=False) + "\n",
-            text=True, capture_output=True, timeout=180, check=False,
-            env=os.environ.copy(),
+            text=True, encoding="utf-8", errors="strict", capture_output=True, timeout=180, check=False,
+            env=child_env,
         )
         if completed.returncode != 0:
             raise RuntimeError(f"Hermes subprocess failed with exit code {completed.returncode}")

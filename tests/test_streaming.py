@@ -1,6 +1,6 @@
 import threading
 
-from horus_local_voice.streaming import CancellationEpoch, EndpointPolicy, IncrementalTranscriber, PipelinedResponder, StreamState, chunk_text, detect_endpoint, script_route
+from horus_local_voice.streaming import CancellationEpoch, EndpointPolicy, FinalUtteranceTranscriber, IncrementalTranscriber, PipelinedResponder, StreamState, chunk_text, detect_endpoint, script_route
 
 
 def test_incremental_transcriber_emits_partials_and_final():
@@ -11,6 +11,20 @@ def test_incremental_transcriber_emits_partials_and_final():
     assert len(rows) == 4 and rows[-1].stable
     assert rows[-1].audio_ms == 2000 and seen == sorted(seen)
     assert rows[-1].revisions == 3
+
+
+def test_final_utterance_transcriber_decodes_endpointed_pcm_once():
+    seen = []
+
+    def transcribe(pcm):
+        seen.append(pcm)
+        return "النص النهائي"
+
+    rows = FinalUtteranceTranscriber(transcribe).run(b"x" * 64_000)
+
+    assert seen == [b"x" * 64_000]
+    assert len(rows) == 1 and rows[0].text == "النص النهائي"
+    assert rows[0].stable and rows[0].revisions == 0
 
 
 def test_endpoint_policies_detect_pause_tradeoff():

@@ -41,6 +41,20 @@ class IncrementalTranscriber:
         return rows
 
 
+class FinalUtteranceTranscriber:
+    """Decode an already-endpointed utterance exactly once."""
+
+    def __init__(self, transcribe: Callable[[bytes], str], sample_rate: int = 16_000, sample_width: int = 2):
+        self.transcribe = transcribe
+        self.bytes_per_ms = sample_rate * sample_width / 1000
+
+    def run(self, pcm: bytes) -> list[PartialResult]:
+        started = time.perf_counter()
+        text = self.transcribe(pcm).strip()
+        latency = (time.perf_counter() - started) * 1000
+        return [PartialResult(len(pcm) / self.bytes_per_ms, text, latency, True, 0)]
+
+
 @dataclass(frozen=True)
 class EndpointPolicy:
     name: str

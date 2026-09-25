@@ -442,3 +442,44 @@ def test_aiortc_loopback_transmits_nonzero_pcm_and_exposes_sender_stats():
     events = asyncio.run(scenario())
     assert any(stage == "outbound_media_negotiated" for stage, _ in events)
     assert any(stage == "outbound_rtp_stats" for stage, _ in events)
+
+
+def test_tts_routes_arabic_and_english_with_nonempty_pcm():
+    import scripts.run_whatsapp_webhook_server as runner
+
+    class Voice:
+        def __init__(self, pcm): self.pcm = pcm; self.calls = []
+        def synthesize(self, text):
+            self.calls.append(text)
+            return [type("Chunk", (), {"audio_int16_bytes": self.pcm})()]
+
+    arabic = Voice(b"\x01\x00")
+    english = Voice(b"\x02\x00")
+    events = []
+    from horus_local_voice.streaming import script_route
+    synthesize = runner.build_tts_synthesizer({"ar": arabic, "en": english}, script_route, lambda stage, metrics: events.append((stage, metrics)))
+    assert synthesize("أهلا") == b"\x01\x00"
+    assert synthesize("hello") == b"\x02\x00"
+    assert arabic.calls == ["أهلا"] and english.calls == ["hello"]
+    assert events == [("tts_route", {"tts_route": "ar", "pcm_bytes": 2}), ("tts_route", {"tts_route": "en", "pcm_bytes": 2})]
+
+
+def test_bilingual_stt_retries_arabic_only_for_unsupported_detection():
+    import numpy as np
+    import scripts.run_whatsapp_webhook_server as runner
+
+    class Model:
+        def __init__(self, language): self.language = language; self.calls = []
+        def transcribe(self, samples, **kwargs):
+            self.calls.append(kwargs)
+            text = "forced-ar" if kwargs.get("language") == "ar" else "auto"
+            return iter([type("Segment", (), {"text": text})()]), type("Info", (), {"language": self.language})()
+
+    unsupported = Model("cy")
+    assert runner.build_bilingual_transcriber(unsupported, np, 5)(b"\x00\x00" * 160) == "forced-ar"
+    assert [call.get("language") for call in unsupported.calls] == [None, "ar"]
+    assert all(call["vad_filter"] is False and call["condition_on_previous_text"] is False and call["beam_size"] == 5 for call in unsupported.calls)
+
+    english = Model("en")
+    assert runner.build_bilingual_transcriber(english, np, 5)(b"\x00\x00" * 160) == "auto"
+    assert [call.get("language") for call in english.calls] == [None]

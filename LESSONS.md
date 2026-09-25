@@ -30,3 +30,5 @@
 - When a voice worker handles an LLM failure, record a redacted stage error and continue consuming the queue; provider failure must not terminate the worker thread.
 - Track aiortc remote-track tasks, cancel and gather them before `RTCPeerConnection.close()`, retrieve task exceptions, stop the loop, and join the loop thread to prevent closed-loop warnings.
 - Queue consumption is not RTP transmission: live voice acceptance requires proof that generated PCM is consumed by the actual paced `OutputTrack`, produces increasing sender packet/byte counters, and is heard by the caller; never treat a bridge queue dequeue as audible delivery.
+- On Windows, set both parent and child subprocess I/O explicitly to UTF-8; `text=True` alone inherits the active code page and can fail Arabic output/stderr decoding.
+- Endpointed live audio should use one final multilingual decode; re-transcribing every prefix after VAD has already completed an utterance wastes latency without yielding a usable partial.

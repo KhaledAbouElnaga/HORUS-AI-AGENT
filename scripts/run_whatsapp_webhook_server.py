@@ -31,7 +31,6 @@ LIVE_ENV_NAMES = (
     "META_APP_SECRET",
     "WHATSAPP_ACCESS_TOKEN",
     "HORUS_ROOT",
-    "STT_MODEL",
     "PIPER_AR_VOICE",
     "PIPER_EN_VOICE",
 )
@@ -66,10 +65,40 @@ def redacted_event_log(kind: str, status: str) -> str:
 
 
 def redacted_stage_log(stage: str, metrics: dict) -> None:
-    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec"}
+    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec", "tts_route"}
     allowed = {key: value for key, value in metrics.items() if key in allowed_keys and isinstance(value, (int, float, str))}
     suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
     logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
+
+
+def build_bilingual_transcriber(model, numpy, beam_size: int):
+    """Auto-detect Arabic/English, retrying Arabic only for unsupported detections."""
+    def transcribe(pcm: bytes) -> str:
+        samples = numpy.frombuffer(pcm, dtype=numpy.int16).astype(numpy.float32) / 32768.0
+
+        def decode(language=None):
+            segments, info = model.transcribe(samples, beam_size=beam_size, vad_filter=False, condition_on_previous_text=False, language=language)
+            return " ".join(segment.text.strip() for segment in segments).strip(), info
+
+        text, info = decode()
+        if str(getattr(info, "language", "")) not in {"ar", "en"}:
+            arabic_text, _ = decode("ar")
+            if arabic_text:
+                return arabic_text
+        return text
+    return transcribe
+
+
+def build_tts_synthesizer(voices, route, stage_logger):
+    """Synthesize one route and emit only route plus PCM size."""
+    def synthesize(text: str) -> bytes:
+        selected = route(text)
+        pcm = b"".join(chunk.audio_int16_bytes for chunk in voices[selected].synthesize(text))
+        if not pcm:
+            raise RuntimeError("TTS returned empty PCM")
+        stage_logger("tts_route", {"tts_route": selected, "pcm_bytes": len(pcm)})
+        return pcm
+    return synthesize
 
 
 def create_live_event_handler(coordinator: LiveCallingCoordinator):
@@ -92,25 +121,21 @@ def build_live_coordinator() -> LiveCallingCoordinator:
     from faster_whisper import WhisperModel
     from piper import PiperVoice
     from horus_local_voice.local_horus_port import LocalHorusPythonPort
-    from horus_local_voice.streaming import IncrementalTranscriber, script_route
+    from horus_local_voice.streaming import FinalUtteranceTranscriber, script_route
 
-    model = WhisperModel(os.environ["STT_MODEL"], device="cpu", compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"))
+    model = WhisperModel(os.environ.get("STT_MODEL", "base"), device="cpu", compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"))
+    beam_size = int(os.environ.get("STT_BEAM_SIZE", "5"))
 
-    def transcribe(pcm: bytes) -> str:
-        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, _ = model.transcribe(samples, beam_size=1, vad_filter=True)
-        return " ".join(segment.text.strip() for segment in segments).strip()
+    transcribe = build_bilingual_transcriber(model, np, beam_size)
 
-    transcriber = IncrementalTranscriber(transcribe, sample_rate=16_000)
+    transcriber = FinalUtteranceTranscriber(transcribe, sample_rate=16_000)
     voices = {
         "ar": PiperVoice.load(os.environ["PIPER_AR_VOICE"]),
         "en": PiperVoice.load(os.environ["PIPER_EN_VOICE"]),
     }
     tts_rate = int(os.environ.get("PIPER_TTS_SAMPLE_RATE", "22050"))
 
-    def synthesize(text: str) -> bytes:
-        voice = voices[script_route(text)]
-        return b"".join(chunk.audio_int16_bytes for chunk in voice.synthesize(text))
+    synthesize = build_tts_synthesizer(voices, script_route, redacted_stage_log)
 
     horus = LocalHorusPythonPort(os.environ["HORUS_ROOT"])
     runtime = _IngressRuntime(horus)

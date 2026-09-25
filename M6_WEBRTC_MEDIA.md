@@ -9,11 +9,19 @@
 
 Install the optional live-media dependencies with `requirements-m6-media.txt` together with the existing `requirements-m3-local.txt`. The Graph access token is injected at runtime only; it is not stored, printed, or logged by this repository. No SIP path is used.
 
-The runnable entrypoint is `scripts/run_whatsapp_webhook_server.py`. Its `main()` calls `configure_live_media()` before binding HTTP, so signed `connect` events are dispatched to `LiveCallingCoordinator` rather than the ingress-only adapter. Configure these environment names: `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `HORUS_ROOT`, `STT_MODEL`, `PIPER_AR_VOICE`, and `PIPER_EN_VOICE`; optional names are `STT_COMPUTE_TYPE`, `PIPER_TTS_SAMPLE_RATE`, `META_API_VERSION`, and `WEBHOOK_PORT`.
+The runnable entrypoint is `scripts/run_whatsapp_webhook_server.py`. Its `main()` calls `configure_live_media()` before binding HTTP, so signed `connect` events are dispatched to `LiveCallingCoordinator` rather than the ingress-only adapter. Configure these environment names: `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `HORUS_ROOT`, `PIPER_AR_VOICE`, and `PIPER_EN_VOICE`; optional names are `STT_MODEL` (defaults to `base`), `STT_BEAM_SIZE` (defaults to `5`), `STT_COMPUTE_TYPE`, `PIPER_TTS_SAMPLE_RATE`, `META_API_VERSION`, and `WEBHOOK_PORT`.
 
 The runner emits only redacted stage lines. Outbound stages are intentionally separate: `outbound_pcm_ready` (bridge queue), `outbound_pcm_forwarded` (bridge dequeue), `outbound_pcm_placed` (track queue), `outbound_pcm_consumed` (actual `OutputTrack.recv()` consumption), and `outbound_rtp_stats` (`packets_sent` / `bytes_sent`). Only the last two establish progress beyond the bridge queue, and caller audibility remains the final live acceptance gate. `outbound_media_negotiated` records only safe codec/direction names.
 
 Control-plane failures are staged as `control_sdp_answer`, `control_pre_accept`, or `control_accept` with only status, safe exception type, and HTTP status; raw Graph response bodies are never logged. A failed accept rolls back the provisional `RINGING` marker and event ID so a Meta retry can be accepted again.
+
+## Final bilingual STT and TTS routing
+
+Live VAD has already endpointed an utterance before STT, so the runner performs one final `faster-whisper` decode rather than re-decoding 800 ms prefixes. The selected CPU configuration is multilingual `base`, `int8`, beam size `5`, auto language detection; only an unsupported detected language such as `cy` retries the same completed utterance as Arabic. English (`en`) remains auto-decoded and is never hard-forced to Arabic.
+
+An offline cached 20-fixture comparison reported Egyptian synthetic WER/median latency of tiny-auto `0.7533 / 569.50 ms`, base-auto `0.3648 / 1078.84 ms`, and small-auto `0.1743 / 3497.05 ms`; mixed synthetic WER/median latency was `0.9700 / 640.00 ms`, `0.8081 / 1151.64 ms`, and `0.6940 / 3235.93 ms` respectively. `base` is the live balance; synthetic fixtures are not a substitute for natural bilingual live quality.
+
+TTS chooses the Arabic `ar_JO-kareem` voice only for route `ar` and the English `en_US-lessac` voice only for route `en`. It logs only `tts_route=ar|en` and PCM size, rejects empty PCM, and never logs response text or voice paths.
 
 ## HORUS voice runtime boundary
 
