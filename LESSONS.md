@@ -10,7 +10,6 @@
 - Compare model configurations on identical fixtures and repeated warm runs; a lower-latency forced-language path can have a severe p95 outlier.
 - Treat model quality and runtime as separate gates: TinyLlama executed locally but produced unusable Arabic/instruction outputs, so it is not the selected agent path.
 - Keep physical device tests separate from unattended file tests; enumerating a microphone is not evidence that recording/playback quality passed.
-
 - A partial result is not automatically low latency: recomputing at a 50% prefix made first partial p95 9.04 s including audio accumulation. A persistent decoder/window is needed for a production latency win.
 - Streaming overlap alone did not beat the M3 aggregate p95; rolling context and repeated prefix decode can erase the first-audio gain.
 - On controlled Arabic-led mixed audio, forced Arabic improved WER and latency, but 0.7724 WER is still poor and synthetic evidence must not be presented as natural code-switch quality.
@@ -23,3 +22,21 @@
 - Treat an external runtime as unavailable until a real transport is configured; an adapter must fail closed rather than silently substituting a deterministic demo.
 - The deployed HORUS Worker exposes Telegram-only ingress and Telegram egress; source-level KV/tool discovery is not execution evidence. Keep the M5 transport gate explicit until a callable session API exists.
 - When adapting the installed HORUS memory store, its internal key is `kind:key`; namespace filtering must inspect the stored `key` field rather than assuming the kind prefix is retained there.
+- Treat Meta Calling public documentation and account entitlement as separate gates; build a normalized, redacted simulator without inferring live payload or media availability.
+- Keep a persistent event loop for aiortc peer connections; `asyncio.run()` per SDP operation closes the loop and breaks the live RTP/ICE lifecycle.
+- Accumulate live RTP audio with WebRTC VAD and endpoint on consecutive silence; fixed short Whisper windows can be discarded by VAD and destabilize language detection.
+- Treat live accept as a transaction: mark the normalized event only provisionally, roll back `RINGING` and its event marker on SDP/Graph failure, and let Meta retry the same connect instead of misclassifying it as a permanent duplicate.
+- Keep a process boundary between the voice venv and Hermes: invoke Hermes' own interpreter/runtime through a redacted RPC, rather than importing the full external agent and its dependencies into the voice environment.
+- When a voice worker handles an LLM failure, record a redacted stage error and continue consuming the queue; provider failure must not terminate the worker thread.
+- Track aiortc remote-track tasks, cancel and gather them before `RTCPeerConnection.close()`, retrieve task exceptions, stop the loop, and join the loop thread to prevent closed-loop warnings.
+- Queue consumption is not RTP transmission: live voice acceptance requires proof that generated PCM is consumed by the actual paced `OutputTrack`, produces increasing sender packet/byte counters, and is heard by the caller; never treat a bridge queue dequeue as audible delivery.
+- On Windows, set both parent and child subprocess I/O explicitly to UTF-8; `text=True` alone inherits the active code page and can fail Arabic output/stderr decoding.
+- Endpointing must require a short voiced run, a minimum utterance duration, and patient silence for phone speech; dispatching a single VAD frame fragments questions and amplifies stale-turn latency.
+- When playback echo cannot yet be cancelled, use explicit half-duplex suppression and a tail; disable barge-in deliberately rather than letting TTS recursively trigger new turns.
+- Keep telephony transport and conversational intelligence as separate replaceable boundaries; a Realtime backend should reuse proven PCM/RTP pacing while bypassing legacy STT/VAD/LLM/TTS entirely.
+- Create one model WebSocket and media bridge per call, and make sequential-call freshness a regression; reusing a closed/global voice bridge risks cross-call leakage and makes cleanup unprovable.
+- A speech backend preflight must assert semantics and tool continuation, not just non-zero audio: stream the production PCM rates, count server turn commits, inspect transcript events only in memory, drain the real output boundary, and verify teardown plus a fresh second session.
+- Timeouts need an executable recovery path at every asynchronous boundary; cancel a stuck response, request a brief fallback only while the socket is usable, and always close rather than silently waiting.
+- Keep the Realtime function catalogue aligned with every permitted read-only HORUS category; test both advertisement and dispatch so a safe tool is not silently unreachable.
+- Treat semantic-VAD tuning as a measured preflight concern, not an overlap-control mechanism: retain explicit per-turn gating, use the previously verified medium eagerness, and report safe server speech/commit timing when a fixture fails to endpoint.
+- A server VAD commit must close ingress before response creation, not at first playout; gate queued and actual output too, then reopen only after completion, drain, and tail expiry so noise cannot create an overlapping turn.

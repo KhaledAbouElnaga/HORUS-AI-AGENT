@@ -98,3 +98,8 @@ Evidence for implementation tests must be attached to the milestone PR; this mil
 | M5-09 | PASS | Full local regression, compileall, tracked-file secret scan, and diff check pass |
 | M5-10 | PASS | Local M5 milestone acceptance is satisfied and final-review ready. Native token streaming/true mid-response cancellation remain PARTIAL/NOT MEASURED; deployed Worker external voice transport remains BLOCKED; bilingual decoded quality remains NOT MEASURED. |
 | M5-11 | PASS | Authoritative artifact latency: response-ready 21.027 ms p95; response-ready→first-audio 213.577 ms p95; user-end→first-audio 3,553.642 ms p95; tool result 11.46 ms p95; memory lookup/update 1.005/0.693 ms; RSS 502.98→732.59 MB (+229.61 MB) |
+| M6-01 | PASS / PARTIAL | Official public non-SIP Calling contract documented; owner verified test app, WABA app subscription, `calls` subscription, and live control webhooks; live media remains NOT MEASURED |
+| M6-02 | PASS | Strict normalized event/media adapter replay covers lifecycle, correlation, duplicate/stale rejection, cancellation, teardown, and redacted observability |
+| M6-03 | PASS / NOT MEASURED | Non-SIP aiortc SDP/control bridge and PCM STT→HORUS→TTS processor implemented with regression coverage; real OPUS/ICE/DTLS-SRTP and live audio require one owner live-call gate |
+| M6-04 | PASS / PARTIAL | Reachable simulator failures fail closed; live Meta failure matrix, reconnect timing, and resource drift remain NOT MEASURED |
+| M6-05 | PASS | Local regression, compileall, secret scan, and diff check pass; no credentials, billing, provider, production, or private WhatsApp automation changes |

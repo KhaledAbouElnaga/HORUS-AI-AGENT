@@ -1,0 +1,274 @@
+"""Runnable local Meta Calling ingress with live non-SIP media wiring.
+
+All secrets are read only from the environment. Logs are intentionally limited to
+startup state and normalized event status; payloads, identifiers, SDP, and secret
+values never enter logs.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+from horus_local_voice.whatsapp_calling import WhatsAppCallingAdapter
+from horus_local_voice.whatsapp_media import (
+    DuplexVoiceBridge,
+    LiveCallingCoordinator,
+    MetaCallingClient,
+    PipelineVoiceTurnProcessor,
+    aiortc_endpoint_factory,
+)
+from horus_local_voice.whatsapp_webhook import WhatsAppCallingWebhook, parse_meta_calls_payload
+
+logger = logging.getLogger("whatsapp_calling_live")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+COMMON_LIVE_ENV_NAMES = (
+    "WHATSAPP_WEBHOOK_VERIFY_TOKEN",
+    "META_APP_SECRET",
+    "WHATSAPP_ACCESS_TOKEN",
+    "HORUS_ROOT",
+)
+LEGACY_LIVE_ENV_NAMES = ("PIPER_AR_VOICE", "PIPER_EN_VOICE")
+REALTIME_LIVE_ENV_NAMES = ("OPENAI_API_KEY",)
+
+
+def voice_backend() -> str:
+    backend = os.environ.get("HORUS_VOICE_BACKEND", "legacy").strip().lower()
+    if backend not in {"legacy", "realtime"}:
+        raise RuntimeError("HORUS_VOICE_BACKEND must be realtime or legacy")
+    return backend
+
+
+class _IngressRuntime:
+    """Control adapter for the media bridge; audio is handled by its PCM path."""
+
+    def __init__(self, horus):
+        self.horus = horus
+
+    def open_session(self, session_id):
+        self.horus.resume_session(session_id)
+
+    def ingest_media(self, session_id, media):
+        pass
+
+    def cancel(self, session_id):
+        self.horus.cancel(session_id)
+
+    def close_session(self, session_id):
+        self.horus.close(session_id)
+
+
+def _parser(payload: dict) -> list[dict]:
+    return parse_meta_calls_payload(payload)
+
+
+def redacted_event_log(kind: str, status: str) -> str:
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return f"calling_event timestamp={timestamp} kind={kind} status={status}"
+
+
+def redacted_stage_log(stage: str, metrics: dict) -> None:
+    allowed_keys = {"elapsed_ms", "chunks", "queue_depth", "duration_ms", "sample_rate", "http_status", "status", "error_type", "pcm_bytes", "packets_sent", "bytes_sent", "direction", "codec", "tts_route", "stale_turn_drops", "turn_replaced", "session_reused", "model", "tool", "stage"}
+    allowed = {key: value for key, value in metrics.items() if key in allowed_keys and isinstance(value, (int, float, str))}
+    suffix = " ".join(f"{key}={value}" for key, value in sorted(allowed.items()))
+    logger.info("live_stage timestamp=%s stage=%s%s", datetime.now(timezone.utc).isoformat(timespec="seconds"), stage, (" " + suffix) if suffix else "")
+
+
+def build_bilingual_transcriber(model, numpy, beam_size: int, ambiguity_threshold: float = 0.60):
+    """Use auto language first; compare ar/en decodes when confidence is ambiguous."""
+    def transcribe(pcm: bytes) -> str:
+        samples = numpy.frombuffer(pcm, dtype=numpy.int16).astype(numpy.float32) / 32768.0
+
+        def decode(language=None):
+            segments, info = model.transcribe(samples, beam_size=beam_size, vad_filter=False, condition_on_previous_text=False, language=language)
+            rows = list(segments)
+            text = " ".join(str(segment.text).strip() for segment in rows).strip()
+            quality = sum(float(getattr(segment, "avg_logprob", -5.0)) - float(getattr(segment, "no_speech_prob", 0.0)) for segment in rows) / max(1, len(rows))
+            return text, info, quality
+
+        auto_text, auto_info, auto_quality = decode()
+        language = str(getattr(auto_info, "language", ""))
+        probability = float(getattr(auto_info, "language_probability", 0.0) or 0.0)
+        if language in {"ar", "en"} and probability >= ambiguity_threshold:
+            return auto_text
+
+        arabic_text, _arabic_info, arabic_quality = decode("ar")
+        english_text, _english_info, english_quality = decode("en")
+
+        def score(text: str, quality: float, target: str) -> float:
+            arabic = sum("\u0600" <= char <= "\u06ff" for char in text)
+            latin = sum(char.isascii() and char.isalpha() for char in text)
+            letters = arabic + latin
+            plausibility = (arabic if target == "ar" else latin) / max(1, letters)
+            return quality + plausibility
+
+        arabic_score = score(arabic_text, arabic_quality, "ar")
+        english_score = score(english_text, english_quality, "en")
+        return arabic_text if arabic_text and arabic_score > english_score else english_text
+    return transcribe
+
+
+def build_tts_synthesizer(voices, route, stage_logger):
+    """Synthesize one route and emit only route plus PCM size."""
+    def synthesize(text: str) -> bytes:
+        selected = route(text)
+        pcm = b"".join(chunk.audio_int16_bytes for chunk in voices[selected].synthesize(text))
+        if not pcm:
+            raise RuntimeError("TTS returned empty PCM")
+        stage_logger("tts_route", {"tts_route": selected, "pcm_bytes": len(pcm)})
+        return pcm
+    return synthesize
+
+
+def create_live_event_handler(coordinator: LiveCallingCoordinator):
+    """Dispatch normalized events after webhook signature validation and parsing."""
+    def handle(event: dict) -> dict:
+        if event["kind"] == "incoming":
+            return coordinator.accept_connect(event)
+        if event["kind"] == "hangup":
+            return coordinator.hangup(event)
+        raise ValueError("unsupported live event kind")
+    return handle
+
+
+def build_live_coordinator() -> LiveCallingCoordinator:
+    """Build either legacy local speech or OpenAI Realtime over the same RTP path."""
+    backend = voice_backend()
+    required = COMMON_LIVE_ENV_NAMES + (REALTIME_LIVE_ENV_NAMES if backend == "realtime" else LEGACY_LIVE_ENV_NAMES)
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        raise RuntimeError("missing live media environment variables: " + ",".join(missing))
+
+    from horus_local_voice.local_horus_port import LocalHorusPythonPort
+
+    realtime = backend == "realtime"
+    horus = LocalHorusPythonPort(os.environ["HORUS_ROOT"], enable_conversation=not realtime)
+    runtime = _IngressRuntime(horus)
+    adapter = WhatsAppCallingAdapter(runtime)
+    client = MetaCallingClient(os.environ["WHATSAPP_ACCESS_TOKEN"], api_version=os.environ.get("META_API_VERSION", "v26.0"))
+
+    if realtime:
+        from horus_local_voice.realtime_voice import REALTIME_MODEL, RealtimeTimeouts, RealtimeVoiceBridge
+
+        timeouts = RealtimeTimeouts(
+            connect=float(os.environ.get("REALTIME_CONNECT_TIMEOUT_S", "10")),
+            first_response=float(os.environ.get("REALTIME_FIRST_RESPONSE_TIMEOUT_S", "12")),
+            tool=float(os.environ.get("REALTIME_TOOL_TIMEOUT_S", "5")),
+            response=float(os.environ.get("REALTIME_RESPONSE_TIMEOUT_S", "30")),
+        )
+
+        def create_voice(session_id: str):
+            return RealtimeVoiceBridge(
+                session_id,
+                horus,
+                model=REALTIME_MODEL,
+                voice=os.environ.get("REALTIME_VOICE", "marin"),
+                timeouts=timeouts,
+                playback_tail_ms=int(os.environ.get("PLAYBACK_TAIL_MS", "600")),
+                stage_logger=redacted_stage_log,
+            )
+    else:
+        import numpy as np
+        from faster_whisper import WhisperModel
+        from piper import PiperVoice
+        from horus_local_voice.streaming import FinalUtteranceTranscriber, script_route
+
+        model = WhisperModel(os.environ.get("STT_MODEL", "base"), device="cpu", compute_type=os.environ.get("STT_COMPUTE_TYPE", "int8"))
+        beam_size = int(os.environ.get("STT_BEAM_SIZE", "5"))
+        transcribe = build_bilingual_transcriber(model, np, beam_size)
+        transcriber = FinalUtteranceTranscriber(transcribe, sample_rate=16_000)
+        voices = {
+            "ar": PiperVoice.load(os.environ["PIPER_AR_VOICE"]),
+            "en": PiperVoice.load(os.environ["PIPER_EN_VOICE"]),
+        }
+        tts_rate = int(os.environ.get("PIPER_TTS_SAMPLE_RATE", "22050"))
+        synthesize = build_tts_synthesizer(voices, script_route, redacted_stage_log)
+
+        def create_voice(session_id: str):
+            processor = PipelineVoiceTurnProcessor(
+                session_id, transcriber, horus, synthesize,
+                tts_sample_rate=tts_rate, stage_logger=redacted_stage_log,
+            )
+            return DuplexVoiceBridge(
+                processor, max_output_chunks=64, background_processing=True,
+                stage_logger=redacted_stage_log, endpointing=True,
+                end_silence_ms=int(os.environ.get("END_SILENCE_MS", "700")),
+                playback_tail_ms=int(os.environ.get("PLAYBACK_TAIL_MS", "800")),
+            )
+
+    return LiveCallingCoordinator(
+        adapter, client, lambda: aiortc_endpoint_factory(redacted_stage_log),
+        voice_factory=create_voice, stage_logger=redacted_stage_log,
+    )
+
+
+# Import-safe ingress object; live handler is attached only in main().
+class _NoopRuntime:
+    def open_session(self, session_id): pass
+    def ingest_media(self, session_id, media): pass
+    def cancel(self, session_id): pass
+    def close_session(self, session_id): pass
+
+
+adapter = WhatsAppCallingAdapter(_NoopRuntime())
+webhook = WhatsAppCallingWebhook(adapter, _parser)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path != webhook.path:
+            self.send_error(404)
+            return
+        query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+        try:
+            response = webhook.verify_get(query, os.environ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"])
+        except Exception:
+            self.send_error(403)
+            return
+        self.send_response(response.status)
+        self.end_headers()
+        self.wfile.write(response.body.encode())
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != webhook.path:
+            self.send_error(404)
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        try:
+            results = webhook.receive_post(body, self.headers.get("X-Hub-Signature-256"), os.environ["META_APP_SECRET"])
+        except Exception:
+            logger.info(redacted_event_log("unparsed", "control_error"))
+            self.send_error(403)
+            return
+        for result in results:
+            logger.info(redacted_event_log(result["kind"], result["status"]))
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"EVENT_RECEIVED")
+
+
+def configure_live_media() -> LiveCallingCoordinator:
+    coordinator = build_live_coordinator()
+    webhook.event_handler = create_live_event_handler(coordinator)
+    return coordinator
+
+
+def main() -> None:
+    configure_live_media()
+    port = int(os.environ.get("WEBHOOK_PORT", "8788"))
+    logger.info("live_calling_server media=enabled backend=%s port=%d signature_validation=enabled", voice_backend(), port)
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

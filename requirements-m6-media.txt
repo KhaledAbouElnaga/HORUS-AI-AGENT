@@ -1,0 +1,5 @@
+# Optional M6 live media dependencies
+# Install in the HORUS webhook runtime environment only.
+aiortc==1.15.0
+av>=14,<18
+openai[realtime]>=3.14,<4
