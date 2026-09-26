@@ -12,7 +12,7 @@
 - **Sustained evidence:** 50/50 turns, 5 cancellation calls, stale audio after cancel 0, RSS 502.98→732.59 MB (+229.61 MB); runtime-response-ready p95 21.027 ms; response-ready→first-audio p95 213.577 ms; user-end→first-audio p95 3,553.642 ms; tool intent→result p95 11.46 ms.
 - **Native streaming:** PARTIAL — installed Python agent returns complete responses; native first-token and mid-response cancellation remain NOT MEASURED.
 - **Legacy mixed language:** multilingual `base/int8`, beam 5 remains available only under `HORUS_VOICE_BACKEND=legacy`; it is no longer the Step 7 acceptance path.
-- **Regression:** 107 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
+- **Regression:** 108 tests pass; compileall, tracked-file secret scan, and `git diff --check` pass.
 - **Safety:** No credentials, billing, provider, Meta/WhatsApp, deployment, or unrelated-system changes. `OPENAI_API_KEY` is read only from the process environment and is never logged or persisted.
 - **Next action:** run the single live Realtime preflight from the terminal that already has `OPENAI_API_KEY`. Only if it passes, run one final WhatsApp acceptance call. PR #15 remains open; do not merge.
 - **M6 official Calling:** Meta control, SDP/ICE, inbound media, caller-heard OutputTrack/Opus/RTP delivery, and RTP counters are proven. The new Realtime backend reuses that transport unchanged; clear Realtime Arabic caller experience remains **NOT MEASURED** until the final owner call.

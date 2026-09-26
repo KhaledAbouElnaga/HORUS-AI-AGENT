@@ -156,6 +156,7 @@ class RealtimeVoiceBridge:
         self._fallback_pending = False
         self._input_epoch = 0
         self._audio_input_started = False
+        self._turn_input_started_at: float | None = None
         self._turn_ended_at: float | None = None
         self._response_started_at: float | None = None
         self._first_audio_at: float | None = None
@@ -170,6 +171,11 @@ class RealtimeVoiceBridge:
             "session_ready": False,
             "closed": False,
             "committed_turns": 0,
+            "speech_started": False,
+            "speech_stopped": False,
+            "speech_started_after_input_ms": None,
+            "speech_stopped_after_input_ms": None,
+            "committed_after_input_ms": None,
             "responses_started": 0,
             "responses_completed": 0,
             "audio_input_bytes_24k": 0,
@@ -222,7 +228,7 @@ class RealtimeVoiceBridge:
                         "noise_reduction": {"type": "far_field"},
                         "turn_detection": {
                             "type": "semantic_vad",
-                            "eagerness": "low",
+                            "eagerness": "medium",
                             "create_response": False,
                             "interrupt_response": False,
                         },
@@ -361,11 +367,21 @@ class RealtimeVoiceBridge:
         kind = event.get("type", "")
         now = time.perf_counter()
         if kind == "input_audio_buffer.speech_started":
+            elapsed = self._turn_elapsed_ms(now)
+            with self._lock:
+                self._metrics["speech_started"] = True
+                self._metrics["speech_started_after_input_ms"] = elapsed
+            self._stage("realtime_speech_started", {"after_input_ms": elapsed})
             return
         elif kind == "input_audio_buffer.speech_stopped":
             self._turn_ended_at = now
             self._first_audio_at = None
             self._response_started_at = None
+            elapsed = self._turn_elapsed_ms(now)
+            with self._lock:
+                self._metrics["speech_stopped"] = True
+                self._metrics["speech_stopped_after_input_ms"] = elapsed
+            self._stage("realtime_speech_stopped", {"after_input_ms": elapsed})
         elif kind == "input_audio_buffer.committed":
             await self._accept_committed_turn(now)
         elif kind == "response.created":
@@ -454,15 +470,21 @@ class RealtimeVoiceBridge:
         self._input_epoch += 1
         self._turn_ended_at = self._turn_ended_at or now
         self._first_audio_at = None
+        elapsed = self._turn_elapsed_ms(now)
         with self._lock:
             self._metrics["committed_turns"] += 1
-        self._stage("realtime_turn_committed", {})
+            self._metrics["committed_after_input_ms"] = elapsed
+        self._stage("realtime_turn_committed", {"after_input_ms": elapsed})
         self._stage("turn_locked", {"reason": "committed"})
         try:
             await self._send_event({"type": "input_audio_buffer.clear"})
         except Exception:
             pass
         await self._create_response()
+
+    def _turn_elapsed_ms(self, now: float) -> float | None:
+        started = self._turn_input_started_at
+        return round((now - started) * 1000, 2) if started is not None else None
 
     async def _create_response(self, response: dict | None = None) -> bool:
         if self._response_create_pending or self._active_response_id is not None:
@@ -488,6 +510,7 @@ class RealtimeVoiceBridge:
             return
         self._turn_locked = False
         self._turn_ended_at = None
+        self._turn_input_started_at = None
         self._response_complete = False
         self._fallback_requested = False
         self._stage("turn_unlocked", {})
@@ -681,6 +704,9 @@ class RealtimeVoiceBridge:
         if not ready or self._audio_queue is None:
             self._stage("realtime_error", {"error_type": "session_not_ready"})
             return
+        with self._lock:
+            if self._turn_input_started_at is None:
+                self._turn_input_started_at = time.perf_counter()
         pcm24 = self._resample_pcm16(pcm, 48_000, 24_000, output=False)
         if not self._audio_input_started:
             self._audio_input_started = True

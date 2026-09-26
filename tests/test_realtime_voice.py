@@ -89,7 +89,7 @@ def test_realtime_session_uses_pcm24_semantic_vad_horus_identity_and_safe_tools(
     assert session["output_modalities"] == ["audio"]
     assert session["audio"]["input"]["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert session["audio"]["input"]["turn_detection"] == {
-        "type": "semantic_vad", "eagerness": "low", "create_response": False, "interrupt_response": False,
+        "type": "semantic_vad", "eagerness": "medium", "create_response": False, "interrupt_response": False,
     }
     assert session["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert "حورس" in session["instructions"] and "Khaled" in session["instructions"]
@@ -134,6 +134,24 @@ def test_realtime_turn_commit_transcript_semantics_and_response_metrics_are_in_m
     assert bridge.transcript_contains("حورس")
     assert snap["response_completion_ms"] is not None
     assert all("حورس" not in json.dumps(metrics, ensure_ascii=False) for _, metrics in events)
+    bridge.close()
+
+
+def test_realtime_turn_detection_observability_is_safe_and_timed():
+    bridge, transport, _tools, events = make_bridge()
+    bridge.on_pcm(b"\x01\x00" * 960, 48_000)
+    emit(bridge, transport, {"type": "input_audio_buffer.speech_started"})
+    emit(bridge, transport, {"type": "input_audio_buffer.speech_stopped"})
+    emit(bridge, transport, {"type": "input_audio_buffer.committed"})
+    assert wait_until(lambda: bridge.snapshot()["committed_turns"] == 1)
+    snap = bridge.snapshot()
+    assert snap["speech_started"] and snap["speech_stopped"]
+    assert all(isinstance(snap[key], float) and snap[key] >= 0 for key in (
+        "speech_started_after_input_ms", "speech_stopped_after_input_ms", "committed_after_input_ms",
+    ))
+    stage_metrics = {stage: metrics for stage, metrics in events}
+    assert {"realtime_speech_started", "realtime_speech_stopped", "realtime_turn_committed"} <= set(stage_metrics)
+    assert all("audio" not in json.dumps(metrics, ensure_ascii=False).lower() for metrics in stage_metrics.values())
     bridge.close()
 
 

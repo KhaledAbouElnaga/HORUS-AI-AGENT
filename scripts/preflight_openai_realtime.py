@@ -72,8 +72,9 @@ def synthesize_fixture_48k() -> bytes:
     pcm48, _state = audioop.ratecv(pcm, 2, 1, source_rate, 48_000, None)
     if not pcm48:
         raise RuntimeError("Arabic preflight fixture resampling returned empty PCM")
-    # Leading/trailing silence exercise server semantic VAD without local endpointing.
-    return (b"\0" * (48_000 * 2 // 5)) + pcm48 + (b"\0" * (48_000 * 2 * 3 // 2))
+    # A clear complete phrase plus 2.5 s of trailing silence gives semantic VAD
+    # enough endpoint context without layering local endpointing.
+    return (b"\0" * (48_000 * 2 * 2 // 5)) + pcm48 + (b"\0" * (48_000 * 2 * 5 // 2))
 
 
 def stream_realtime(bridge: RealtimeVoiceBridge, pcm48: bytes) -> None:
@@ -100,6 +101,17 @@ def drain_output_to_playout(bridge: RealtimeVoiceBridge) -> int:
             raise RuntimeError("Realtime output boundary returned malformed PCM")
         bridge.on_playout_pcm(pcm, rate)
         forwarded += len(pcm)
+
+
+def turn_diagnostics(metrics: dict) -> dict:
+    """Safe, transcript-free event evidence for an owner preflight rerun."""
+    return {
+        key: metrics.get(key)
+        for key in (
+            "speech_started", "speech_stopped", "committed_turns",
+            "speech_started_after_input_ms", "speech_stopped_after_input_ms", "committed_after_input_ms",
+        )
+    }
 
 
 def controlled_failure_probe(tool_runtime) -> dict:
@@ -157,7 +169,7 @@ def main() -> int:
     try:
         bridge.start()
         stream_realtime(bridge, fixture)
-        wait_until(lambda: bridge.snapshot()["committed_turns"] >= 1, 15, "semantic VAD commit")
+        wait_until(lambda: bridge.snapshot()["committed_turns"] >= 1, 20, "semantic VAD commit")
         wait_until(lambda: bridge.snapshot()["audio_output_bytes_24k"] > 0, 35, "first response audio")
         noise = b"\x01\x00" * 960
         for _ in range(20):
@@ -179,7 +191,7 @@ def main() -> int:
         wait_until(lambda: not bridge.snapshot()["turn_locked"], 5, "first turn playback drain")
 
         stream_realtime(bridge, fixture)
-        wait_until(lambda: bridge.snapshot()["committed_turns"] == 2, 15, "second semantic VAD commit")
+        wait_until(lambda: bridge.snapshot()["committed_turns"] == 2, 20, "second semantic VAD commit")
         wait_until(lambda: bridge.snapshot()["responses_completed"] >= 2, 35, "second Arabic response completion")
         second_output_bytes = drain_output_to_playout(bridge)
         if second_output_bytes <= 0:
@@ -195,6 +207,13 @@ def main() -> int:
         if tool != {"category": "status", "service": "HORUS", "ready": True, "active_tasks": expected_tasks}:
             raise RuntimeError("Realtime tool result did not match local HORUS status")
         metrics = bridge.snapshot()
+    except Exception as exc:
+        print(json.dumps({
+            "passed": False,
+            "failure_type": type(exc).__name__,
+            "turn_detection": turn_diagnostics(bridge.snapshot()),
+        }, ensure_ascii=False, sort_keys=True))
+        raise
     finally:
         bridge.close()
         horus.close(session_id)
@@ -240,6 +259,7 @@ def main() -> int:
         "session_ready": True,
         "arabic_fixture_48k_bytes": len(fixture),
         "semantic_turns_committed": metrics["committed_turns"],
+        "turn_detection": turn_diagnostics(metrics),
         "noise_echo_regression": {
             "injected_frames": noise_echo_frames,
             "suppressed_processing_frames": metrics["inbound_suppressed_processing_frames"],
