@@ -97,7 +97,8 @@ class RealtimeVoiceBridge:
     INSTRUCTIONS = (
         "أنت حورس (HORUS)، المساعد الشخصي الذكي لخالد (Khaled). "
         "اتكلم بالمصري بشكل طبيعي وواضح ومختصر ومباشر ومناسب للمكالمة الصوتية. "
-        "لو المتصل اتكلم عربي رد بالعربي، ولو اتكلم إنجليزي رد بالإنجليزي. "
+        "لو المتصل اتكلم عربي رد بالعربي، ولو الصوت غير واضح أو فيه دوشة اطلب بالمصري بإيجاز إنه يعيد كلامه. "
+        "لا تنتقل للإنجليزي إلا إذا كان المتصل قال طلبًا إنجليزيًا كاملًا وواضحًا. "
         "عرّف نفسك باسم حورس عند السؤال عن اسمك. "
         "استخدم أدوات حورس المحلية للبيانات الحالية بدل التخمين، ولا تكشف تفاصيل التنفيذ الداخلية إلا لو اتطلبت. "
         "خلي الرد غالبًا جملة أو جملتين ومن غير مقدمات طويلة."
@@ -148,6 +149,12 @@ class RealtimeVoiceBridge:
         self._output_resample_state = None
         self._playback_until = 0.0
         self.playback_tail_s = max(0, playback_tail_ms) / 1000.0
+        self._turn_locked = False
+        self._response_create_pending = False
+        self._active_response_id: str | None = None
+        self._response_complete = False
+        self._fallback_pending = False
+        self._input_epoch = 0
         self._audio_input_started = False
         self._turn_ended_at: float | None = None
         self._response_started_at: float | None = None
@@ -168,6 +175,8 @@ class RealtimeVoiceBridge:
             "audio_input_bytes_24k": 0,
             "audio_output_bytes_24k": 0,
             "audio_forwarded_bytes_48k": 0,
+            "inbound_suppressed_processing_frames": 0,
+            "inbound_suppressed_playback_frames": 0,
             "tool_calls": 0,
             "tool_results": 0,
             "connect_ms": None,
@@ -213,8 +222,8 @@ class RealtimeVoiceBridge:
                         "noise_reduction": {"type": "far_field"},
                         "turn_detection": {
                             "type": "semantic_vad",
-                            "eagerness": "medium",
-                            "create_response": True,
+                            "eagerness": "low",
+                            "create_response": False,
                             "interrupt_response": False,
                         },
                     },
@@ -323,9 +332,14 @@ class RealtimeVoiceBridge:
 
     async def _audio_sender(self) -> None:
         while not self._stop.is_set():
-            pcm24 = await self._audio_queue.get()
-            if pcm24 is None:
+            item = await self._audio_queue.get()
+            if item is None:
                 return
+            epoch, pcm24 = item
+            with self._lock:
+                accepted = not self._turn_locked and epoch == self._input_epoch
+            if not accepted:
+                continue
             await self._send_event({
                 "type": "input_audio_buffer.append",
                 "audio": base64.b64encode(pcm24).decode("ascii"),
@@ -347,19 +361,28 @@ class RealtimeVoiceBridge:
         kind = event.get("type", "")
         now = time.perf_counter()
         if kind == "input_audio_buffer.speech_started":
-            self._fallback_requested = False
+            return
         elif kind == "input_audio_buffer.speech_stopped":
             self._turn_ended_at = now
             self._first_audio_at = None
             self._response_started_at = None
         elif kind == "input_audio_buffer.committed":
-            with self._lock:
-                self._metrics["committed_turns"] += 1
-            self._stage("realtime_turn_committed", {})
+            await self._accept_committed_turn(now)
         elif kind == "response.created":
+            response = event.get("response") or {}
+            response_id = response.get("id")
+            if not isinstance(response_id, str) or not response_id:
+                return
+            self._active_response_id = response_id
+            self._response_create_pending = False
             self._response_started_at = now
             self._response_deadline_at = now + self.timeouts.response
             self._transcripts.clear()
+            if self._fallback_pending:
+                try:
+                    await self._send_event({"type": "response.cancel"})
+                except Exception:
+                    pass
             with self._lock:
                 self._metrics["responses_started"] += 1
             self._stage("realtime_response_started", {})
@@ -383,10 +406,22 @@ class RealtimeVoiceBridge:
             self._schedule_tool(item)
         elif kind == "response.done":
             response = event.get("response") or {}
+            response_id = response.get("id")
+            if self._active_response_id is not None and response_id not in {None, self._active_response_id}:
+                return
             status = response.get("status")
+            self._active_response_id = None
+            self._response_create_pending = False
             if status not in {None, "completed"}:
                 self._response_deadline_at = None
                 self._stage("realtime_error", {"error_type": "response_failed"})
+                if self._fallback_pending:
+                    await self._start_fallback()
+                    return
+                if self._fallback_requested:
+                    self._response_complete = True
+                    await self._maybe_unlock()
+                    return
                 await self._request_fallback()
                 return
             started = self._response_started_at
@@ -397,13 +432,71 @@ class RealtimeVoiceBridge:
                 if self._transcripts:
                     self._last_transcript = " ".join(self._transcripts)
             self._response_deadline_at = None
+            self._response_complete = True
             self._stage("realtime_response_complete", {"elapsed_ms": elapsed or 0.0})
+            await self._maybe_unlock()
         elif kind == "error":
             error = event.get("error") or {}
-            self._stage("realtime_error", {"error_type": str(error.get("type") or "api_error")})
+            self._stage("realtime_error", {
+                "error_type": str(error.get("type") or "api_error"),
+                "error_code": str(error.get("code") or "unknown"),
+                "stage": "response" if self._active_response_id or self._response_create_pending else "session",
+            })
             await self._request_fallback()
 
+    async def _accept_committed_turn(self, now: float) -> None:
+        if self._turn_locked:
+            self._stage("inbound_suppressed_processing", {"reason": "duplicate_commit"})
+            return
+        self._turn_locked = True
+        self._response_complete = False
+        self._fallback_requested = False
+        self._input_epoch += 1
+        self._turn_ended_at = self._turn_ended_at or now
+        self._first_audio_at = None
+        with self._lock:
+            self._metrics["committed_turns"] += 1
+        self._stage("realtime_turn_committed", {})
+        self._stage("turn_locked", {"reason": "committed"})
+        try:
+            await self._send_event({"type": "input_audio_buffer.clear"})
+        except Exception:
+            pass
+        await self._create_response()
+
+    async def _create_response(self, response: dict | None = None) -> bool:
+        if self._response_create_pending or self._active_response_id is not None:
+            return False
+        self._response_create_pending = True
+        event = {"type": "response.create"}
+        if response is not None:
+            event["response"] = response
+        try:
+            await self._send_event(event)
+            return True
+        except Exception as exc:  # noqa: BLE001 - safe stage, no wire details
+            self._response_create_pending = False
+            self._stage("realtime_error", {"stage": "response_create", "error_type": type(exc).__name__})
+            return False
+
+    async def _maybe_unlock(self) -> None:
+        if not self._turn_locked or not self._response_complete:
+            return
+        if self._response_create_pending or self._active_response_id is not None or not self.output.empty():
+            return
+        if time.monotonic() < self._playback_until:
+            return
+        self._turn_locked = False
+        self._turn_ended_at = None
+        self._response_complete = False
+        self._fallback_requested = False
+        self._stage("turn_unlocked", {})
+
     async def _handle_audio_delta(self, event: dict, now: float) -> None:
+        response_id = event.get("response_id")
+        if self._active_response_id is None or (response_id is not None and response_id != self._active_response_id):
+            self._stage("stale_response_ignored", {"event": "audio_delta"})
+            return
         encoded = event.get("delta")
         if not isinstance(encoded, str) or not encoded:
             return
@@ -488,7 +581,8 @@ class RealtimeVoiceBridge:
                     tasks = result.get("tasks") if isinstance(result, dict) else []
                     self._last_tool_summary = {"category": "tasks", "task_count": len(tasks) if isinstance(tasks, list) else 0}
             self._stage("realtime_tool_result", {"elapsed_ms": elapsed, "status": "ok"})
-            await self._send_event({"type": "response.create"})
+            self._response_complete = False
+            await self._create_response()
         except (TimeoutError, asyncio.TimeoutError):
             with self._lock:
                 self._metrics["tool_calls"] += 1
@@ -502,7 +596,7 @@ class RealtimeVoiceBridge:
 
     async def _check_deadlines(self) -> None:
         now = time.perf_counter()
-        if self._turn_ended_at is not None and self._first_audio_at is None:
+        if self._turn_locked and self._turn_ended_at is not None and self._first_audio_at is None:
             if now - self._turn_ended_at > self.timeouts.first_response:
                 self._turn_ended_at = None
                 self._stage("realtime_timeout", {"stage": "first_response", "error_type": "TimeoutError"})
@@ -511,28 +605,36 @@ class RealtimeVoiceBridge:
             self._response_deadline_at = None
             self._stage("realtime_timeout", {"stage": "response", "error_type": "TimeoutError"})
             await self._request_fallback()
+        await self._maybe_unlock()
 
     async def _request_fallback(self) -> None:
         with self._lock:
             ready = bool(self._metrics["session_ready"])
-        if self._fallback_requested or self._transport is None or not ready:
+        if self._fallback_requested or self._transport is None or not ready or not self._turn_locked:
             return
         self._fallback_requested = True
-        try:
-            await self._send_event({"type": "response.cancel"})
-        except Exception:
-            pass
-        try:
-            await self._send_event({
-                "type": "response.create",
-                "response": {
-                    "output_modalities": ["audio"],
-                    "instructions": f'قل فقط بالمصري: "{self.FALLBACK_AR}"',
-                    "max_output_tokens": 40,
-                },
-            })
-        except Exception as exc:  # noqa: BLE001
-            self._stage("realtime_error", {"stage": "fallback", "error_type": type(exc).__name__})
+        if self._response_create_pending:
+            self._fallback_pending = True
+            return
+        if self._active_response_id is not None:
+            self._fallback_pending = True
+            try:
+                await self._send_event({"type": "response.cancel"})
+            except Exception:
+                pass
+            return
+        await self._start_fallback()
+
+    async def _start_fallback(self) -> None:
+        self._fallback_pending = False
+        created = await self._create_response({
+            "output_modalities": ["audio"],
+            "instructions": f'قل فقط بالمصري: "{self.FALLBACK_AR}"',
+            "max_output_tokens": 40,
+        })
+        if not created:
+            self._response_complete = True
+            await self._maybe_unlock()
 
     @staticmethod
     def _audioop_ratecv(pcm: bytes, source_rate: int, target_rate: int, state):
@@ -564,7 +666,16 @@ class RealtimeVoiceBridge:
                 return
             playback_active = time.monotonic() < self._playback_until
             ready = bool(self._metrics["session_ready"])
-        if playback_active:
+            processing_active = self._turn_locked or self._response_create_pending or self._active_response_id is not None
+            epoch = self._input_epoch
+        if processing_active:
+            with self._lock:
+                self._metrics["inbound_suppressed_processing_frames"] += 1
+            self._stage("inbound_suppressed_processing", {})
+            return
+        if playback_active or not self.output.empty():
+            with self._lock:
+                self._metrics["inbound_suppressed_playback_frames"] += 1
             self._stage("inbound_suppressed_playback", {"duration_ms": round(self.playback_tail_s * 1000)})
             return
         if not ready or self._audio_queue is None:
@@ -577,7 +688,7 @@ class RealtimeVoiceBridge:
 
         def enqueue() -> None:
             try:
-                self._audio_queue.put_nowait(pcm24)
+                self._audio_queue.put_nowait((epoch, pcm24))
             except asyncio.QueueFull:
                 self._stage("realtime_error", {"error_type": "input_queue_full"})
 
@@ -643,7 +754,10 @@ class RealtimeVoiceBridge:
 
     def snapshot(self) -> dict:
         with self._lock:
-            return dict(self._metrics)
+            snapshot = dict(self._metrics)
+            snapshot["turn_locked"] = self._turn_locked
+            snapshot["response_create_pending"] = self._response_create_pending
+            return snapshot
 
     def close(self) -> None:
         with self._lock:

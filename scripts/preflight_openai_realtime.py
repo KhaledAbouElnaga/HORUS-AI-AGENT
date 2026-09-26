@@ -86,6 +86,22 @@ def stream_realtime(bridge: RealtimeVoiceBridge, pcm48: bytes) -> None:
         time.sleep(0.02)
 
 
+def drain_output_to_playout(bridge: RealtimeVoiceBridge) -> int:
+    """Exercise the exact queued 48 kHz output boundary and echo guard."""
+    forwarded = 0
+    while True:
+        item = bridge.next_output(timeout=0.05)
+        if item is None:
+            return forwarded
+        pcm, rate = item
+        if rate != 48_000:
+            raise RuntimeError("Realtime output did not reach the 48 kHz boundary")
+        if not pcm or len(pcm) % 2:
+            raise RuntimeError("Realtime output boundary returned malformed PCM")
+        bridge.on_playout_pcm(pcm, rate)
+        forwarded += len(pcm)
+
+
 def controlled_failure_probe(tool_runtime) -> dict:
     class FailingTransport:
         async def connect(self):
@@ -136,26 +152,39 @@ def main() -> int:
     horus.resume_session(session_id)
     bridge = new_bridge(session_id, horus)
     first_output_bytes = 0
+    second_output_bytes = 0
+    noise_echo_frames = 0
     try:
         bridge.start()
         stream_realtime(bridge, fixture)
         wait_until(lambda: bridge.snapshot()["committed_turns"] >= 1, 15, "semantic VAD commit")
+        wait_until(lambda: bridge.snapshot()["audio_output_bytes_24k"] > 0, 35, "first response audio")
+        noise = b"\x01\x00" * 960
+        for _ in range(20):
+            bridge.on_pcm(noise, 48_000)
+            noise_echo_frames += 1
+            time.sleep(0.02)
+        noisy = bridge.snapshot()
+        if noisy["committed_turns"] != 1 or noisy["inbound_suppressed_processing_frames"] < noise_echo_frames:
+            raise RuntimeError("response-playback noise created an overlapping Realtime turn")
         wait_until(lambda: bridge.snapshot()["responses_completed"] >= 1, 35, "Arabic response completion")
         initial = bridge.snapshot()
         if initial["committed_turns"] != 1:
             raise RuntimeError("semantic VAD did not commit exactly one Arabic user turn")
         if not bridge.transcript_contains("حورس"):
             raise RuntimeError("Realtime response did not semantically identify as HORUS")
-        while True:
-            item = bridge.next_output(timeout=0.05)
-            if item is None:
-                break
-            pcm, rate = item
-            if rate != 48_000:
-                raise RuntimeError("Realtime output did not reach the 48 kHz boundary")
-            first_output_bytes += len(pcm)
+        first_output_bytes = drain_output_to_playout(bridge)
         if first_output_bytes <= 0:
             raise RuntimeError("Realtime output queue received no PCM")
+        wait_until(lambda: not bridge.snapshot()["turn_locked"], 5, "first turn playback drain")
+
+        stream_realtime(bridge, fixture)
+        wait_until(lambda: bridge.snapshot()["committed_turns"] == 2, 15, "second semantic VAD commit")
+        wait_until(lambda: bridge.snapshot()["responses_completed"] >= 2, 35, "second Arabic response completion")
+        second_output_bytes = drain_output_to_playout(bridge)
+        if second_output_bytes <= 0:
+            raise RuntimeError("second Realtime turn produced no 48 kHz output")
+        wait_until(lambda: not bridge.snapshot()["turn_locked"], 5, "second turn playback drain")
 
         bridge.request_status_tool()
         wait_until(lambda: bridge.snapshot()["tool_results"] >= 1, 10, "HORUS tool result")
@@ -195,11 +224,13 @@ def main() -> int:
     report = {
         "passed": all([
             metrics["session_ready"],
-            metrics["committed_turns"] == 1,
-            metrics["responses_completed"] >= 2,
+            metrics["committed_turns"] == 2,
+            metrics["responses_completed"] >= 3,
             metrics["audio_input_bytes_24k"] > 0,
             metrics["audio_output_bytes_24k"] > 0,
             first_output_bytes > 0,
+            second_output_bytes > 0,
+            metrics["inbound_suppressed_processing_frames"] >= noise_echo_frames,
             metrics["tool_results"] == 1,
             failure["bounded"], failure["cleaned"], primary_clean,
             fresh_ready, fresh_clean, not leaked,
@@ -209,6 +240,11 @@ def main() -> int:
         "session_ready": True,
         "arabic_fixture_48k_bytes": len(fixture),
         "semantic_turns_committed": metrics["committed_turns"],
+        "noise_echo_regression": {
+            "injected_frames": noise_echo_frames,
+            "suppressed_processing_frames": metrics["inbound_suppressed_processing_frames"],
+            "second_turn_output_48k_bytes": second_output_bytes,
+        },
         "semantic_identity_contains_horus": True,
         "realtime_audio_24k_bytes": metrics["audio_output_bytes_24k"],
         "output_boundary_48k_bytes": first_output_bytes,

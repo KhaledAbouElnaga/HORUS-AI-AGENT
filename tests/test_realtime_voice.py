@@ -89,7 +89,7 @@ def test_realtime_session_uses_pcm24_semantic_vad_horus_identity_and_safe_tools(
     assert session["output_modalities"] == ["audio"]
     assert session["audio"]["input"]["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert session["audio"]["input"]["turn_detection"] == {
-        "type": "semantic_vad", "eagerness": "medium", "create_response": True, "interrupt_response": False,
+        "type": "semantic_vad", "eagerness": "low", "create_response": False, "interrupt_response": False,
     }
     assert session["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert "حورس" in session["instructions"] and "Khaled" in session["instructions"]
@@ -137,6 +137,55 @@ def test_realtime_turn_commit_transcript_semantics_and_response_metrics_are_in_m
     bridge.close()
 
 
+def test_realtime_committed_turn_blocks_pre_playout_noise_and_reopens_after_drain():
+    bridge, transport, _tools, events = make_bridge(playback_tail_ms=0)
+    pcm48 = b"\x01\x00" * 960
+    bridge.on_pcm(pcm48, 48_000)
+    assert wait_until(lambda: sum(item["type"] == "input_audio_buffer.append" for item in transport.sent) == 1)
+    emit(bridge, transport, {"type": "input_audio_buffer.speech_stopped", "item_id": "u1"})
+    emit(bridge, transport, {"type": "input_audio_buffer.committed", "item_id": "u1"})
+    assert wait_until(lambda: sum(item["type"] == "response.create" for item in transport.sent) == 1)
+    bridge.on_pcm(pcm48, 48_000)
+    time.sleep(0.05)
+    assert sum(item["type"] == "input_audio_buffer.append" for item in transport.sent) == 1
+    assert sum(item["type"] == "response.create" for item in transport.sent) == 1
+    emit(bridge, transport, {"type": "response.created", "response": {"id": "r1"}})
+    emit(bridge, transport, {"type": "response.output_audio.delta", "response_id": "r1", "delta": base64.b64encode(b"\x11\x00" * 480).decode()})
+    emit(bridge, transport, {"type": "response.done", "response": {"id": "r1", "status": "completed"}})
+    pcm, rate = bridge.next_output(timeout=0.2)
+    bridge.on_playout_pcm(pcm, rate)
+    assert wait_until(lambda: any(stage == "turn_unlocked" for stage, _ in events))
+    bridge.on_pcm(pcm48, 48_000)
+    assert wait_until(lambda: sum(item["type"] == "input_audio_buffer.append" for item in transport.sent) == 2)
+    bridge.close()
+
+
+def test_realtime_stale_response_audio_cannot_reach_output_queue():
+    bridge, transport, _tools, events = make_bridge()
+    emit(bridge, transport, {"type": "response.created", "response": {"id": "current"}})
+    emit(bridge, transport, {
+        "type": "response.output_audio.delta",
+        "response_id": "old",
+        "delta": base64.b64encode(b"\x11\x00" * 480).decode(),
+    })
+    assert wait_until(lambda: any(stage == "stale_response_ignored" for stage, _ in events))
+    assert bridge.output.empty()
+    bridge.close()
+
+
+def test_realtime_failed_response_requests_one_fallback_without_cancel_cascade():
+    bridge, transport, _tools, _events = make_bridge()
+    emit(bridge, transport, {"type": "input_audio_buffer.committed", "item_id": "u1"})
+    emit(bridge, transport, {"type": "response.created", "response": {"id": "r1"}})
+    emit(bridge, transport, {"type": "error", "error": {"type": "invalid_request_error", "code": "response_in_progress"}})
+    emit(bridge, transport, {"type": "response.done", "response": {"id": "r1", "status": "failed"}})
+    assert wait_until(lambda: any("حصل عطل مؤقت" in item.get("response", {}).get("instructions", "") for item in transport.sent if item["type"] == "response.create"))
+    fallbacks = [item for item in transport.sent if "حصل عطل مؤقت" in item.get("response", {}).get("instructions", "")]
+    assert len(fallbacks) == 1
+    assert sum(item["type"] == "response.cancel" for item in transport.sent) <= 1
+    bridge.close()
+
+
 def test_realtime_tool_round_trip_executes_local_safe_tool_and_continues_same_session():
     bridge, transport, tools, events = make_bridge()
     emit(bridge, transport, {
@@ -170,6 +219,7 @@ def test_realtime_tasks_tool_executes_only_the_advertised_readonly_category():
 
 def test_failed_response_requests_bounded_arabic_fallback_without_counting_completion():
     bridge, transport, _tools, events = make_bridge()
+    emit(bridge, transport, {"type": "input_audio_buffer.committed", "item_id": "u1"})
     emit(bridge, transport, {"type": "response.created", "response": {"id": "failed"}})
     emit(bridge, transport, {"type": "response.done", "response": {"id": "failed", "status": "failed"}})
     assert wait_until(lambda: any(
@@ -185,11 +235,18 @@ def test_failed_response_requests_bounded_arabic_fallback_without_counting_compl
 def test_realtime_tool_timeout_is_bounded_requests_controlled_fallback_and_cleans_up():
     timeouts = RealtimeTimeouts(connect=1, first_response=1, tool=0.05, response=1)
     bridge, transport, _tools, events = make_bridge(tools=BlockingTools(), timeouts=timeouts)
+    emit(bridge, transport, {"type": "input_audio_buffer.committed", "item_id": "u1"})
+    emit(bridge, transport, {"type": "response.created", "response": {"id": "r1"}})
     emit(bridge, transport, {
         "type": "response.output_item.done",
         "item": {"type": "function_call", "name": "get_horus_status", "call_id": "tool-timeout", "arguments": "{}"},
     })
     assert wait_until(lambda: any(stage == "realtime_timeout" for stage, _ in events))
+    emit(bridge, transport, {"type": "response.done", "response": {"id": "r1", "status": "cancelled"}})
+    assert wait_until(lambda: any(
+        item["type"] == "response.create" and "حصل عطل مؤقت" in item.get("response", {}).get("instructions", "")
+        for item in transport.sent
+    ))
     fallback = [item for item in transport.sent if item["type"] == "response.create"]
     assert fallback and "حصل عطل مؤقت" in fallback[-1]["response"]["instructions"]
     bridge.close()
