@@ -37,3 +37,4 @@
 - Create one model WebSocket and media bridge per call, and make sequential-call freshness a regression; reusing a closed/global voice bridge risks cross-call leakage and makes cleanup unprovable.
 - A speech backend preflight must assert semantics and tool continuation, not just non-zero audio: stream the production PCM rates, count server turn commits, inspect transcript events only in memory, drain the real output boundary, and verify teardown plus a fresh second session.
 - Timeouts need an executable recovery path at every asynchronous boundary; cancel a stuck response, request a brief fallback only while the socket is usable, and always close rather than silently waiting.
+- Keep the Realtime function catalogue aligned with every permitted read-only HORUS category; test both advertisement and dispatch so a safe tool is not silently unreachable.

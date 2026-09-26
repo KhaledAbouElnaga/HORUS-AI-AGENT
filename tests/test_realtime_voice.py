@@ -36,7 +36,7 @@ class FakeRealtimeTransport:
 
 
 class SafeTools:
-    realtime_tool_categories = frozenset({"status"})
+    realtime_tool_categories = frozenset({"status", "tasks"})
 
     def __init__(self):
         self.calls = []
@@ -93,7 +93,7 @@ def test_realtime_session_uses_pcm24_semantic_vad_horus_identity_and_safe_tools(
     }
     assert session["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert "حورس" in session["instructions"] and "Khaled" in session["instructions"]
-    assert [tool["name"] for tool in session["tools"]] == ["get_horus_status"]
+    assert [tool["name"] for tool in session["tools"]] == ["get_horus_status", "get_horus_tasks"]
     bridge.request_status_tool()
     assert wait_until(lambda: any(
         item.get("type") == "response.create" and item.get("response", {}).get("tool_choice") == "required"
@@ -152,6 +152,19 @@ def test_realtime_tool_round_trip_executes_local_safe_tool_and_continues_same_se
     assert any(item["type"] == "response.create" for item in transport.sent)
     assert any(stage == "realtime_tool_call" for stage, _ in events)
     assert any(stage == "realtime_tool_result" for stage, _ in events)
+    bridge.close()
+
+
+def test_realtime_tasks_tool_executes_only_the_advertised_readonly_category():
+    bridge, transport, tools, _events = make_bridge()
+    emit(bridge, transport, {
+        "type": "response.output_item.done",
+        "item": {"type": "function_call", "name": "get_horus_tasks", "call_id": "tasks-1", "arguments": "{}"},
+    })
+    assert wait_until(lambda: bool(tools.calls))
+    assert tools.calls == [("call-session", "tasks", {})]
+    output = next(item for item in transport.sent if item["type"] == "conversation.item.create")
+    assert output["item"]["call_id"] == "tasks-1"
     bridge.close()
 
 

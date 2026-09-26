@@ -192,6 +192,13 @@ class RealtimeVoiceBridge:
                 "description": "Read the current local HORUS service status and active task count.",
                 "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             })
+        if "tasks" in categories:
+            tools.append({
+                "type": "function",
+                "name": "get_horus_tasks",
+                "description": "Read the current local HORUS active tasks.",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            })
         return {
             "type": "session.update",
             "session": {
@@ -441,7 +448,12 @@ class RealtimeVoiceBridge:
         call_id = item.get("call_id")
         self._stage("realtime_tool_call", {"tool": str(name or "unknown")})
         try:
-            if name != "get_horus_status":
+            categories = {
+                "get_horus_status": "status",
+                "get_horus_tasks": "tasks",
+            }
+            category = categories.get(name)
+            if category is None:
                 raise PermissionError("unsupported realtime tool")
             raw_arguments = item.get("arguments") or "{}"
             arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
@@ -453,7 +465,7 @@ class RealtimeVoiceBridge:
                     self._tool_executor,
                     self.tool_runtime.invoke_realtime_tool,
                     self.session_id,
-                    "status",
+                    category,
                     arguments,
                 ),
                 timeout=self.timeouts.tool,
@@ -465,12 +477,16 @@ class RealtimeVoiceBridge:
                 self._metrics["tool_calls"] += 1
                 self._metrics["tool_results"] += 1
                 self._metrics["tool_round_trip_ms"] = elapsed
-                self._last_tool_summary = {
-                    "category": "status",
-                    "service": result.get("service") if isinstance(result, dict) else None,
-                    "ready": result.get("ready") if isinstance(result, dict) else None,
-                    "active_tasks": result.get("active_tasks") if isinstance(result, dict) else None,
-                }
+                if category == "status":
+                    self._last_tool_summary = {
+                        "category": "status",
+                        "service": result.get("service") if isinstance(result, dict) else None,
+                        "ready": result.get("ready") if isinstance(result, dict) else None,
+                        "active_tasks": result.get("active_tasks") if isinstance(result, dict) else None,
+                    }
+                else:
+                    tasks = result.get("tasks") if isinstance(result, dict) else []
+                    self._last_tool_summary = {"category": "tasks", "task_count": len(tasks) if isinstance(tasks, list) else 0}
             self._stage("realtime_tool_result", {"elapsed_ms": elapsed, "status": "ok"})
             await self._send_event({"type": "response.create"})
         except (TimeoutError, asyncio.TimeoutError):
